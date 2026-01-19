@@ -473,6 +473,3 @@ class CreateTaskPage(QWidget):
             self.ly_dynamic.addWidget(SemiModePage(self.ui_task_tmpl))
         else:
             QMessageBox.critical(self, "错误", "请选择正确的模式")
-
-    def update_project_info(self, records: List[Dict]):
-        self.ui_task_tmpl.update_project_info(records)

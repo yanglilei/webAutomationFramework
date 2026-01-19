@@ -13,7 +13,6 @@ class ConfigCenterWidget(BaseTabWidget):
         self.tab_node_page = NodePage()
         self.tab_project_page = ProjectPage()
         self.tab_data_dict_page = DataDictPage()
-        self.tab_project_page.data_changed_signal.connect(self.tab_create_task.update_project_info)
         super().__init__()
 
     def add_tab_widgets(self) -> List[TabWidgetInfo]:

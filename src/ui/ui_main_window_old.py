@@ -20,7 +20,6 @@ class MainWindow(BaseUI):
         # self.tab_task_tmpl_page = UITaskTmpl()
         self.tab_node_page = NodePage()
         self.tab_project_page = ProjectPage()
-        self.tab_project_page.data_changed_signal.connect(self.tab_create_task.update_project_info)
         super().__init__()
         # self.setMinimumSize(800, 600)  # 最小窗口尺寸，避免缩放过小
 
