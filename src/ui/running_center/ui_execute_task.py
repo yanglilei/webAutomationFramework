@@ -1,6 +1,5 @@
 from typing import Optional, List
 
-from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QWidget
 
 from src.frame.base.ui.base_ui import BaseTabWidget, TabWidgetInfo
@@ -201,6 +200,7 @@ class SemiAutomaticTaskPage(QWidget):
 
     def has_running_task(self) -> bool:
         return self.task_manager.running_status
+
     # def on_run_monitor_clicked(self):
     #     """
     #     运行监控
@@ -277,13 +277,13 @@ class SemiAutomaticTaskPage(QWidget):
 
 class UIExecuteTask(BaseTabWidget):
     """执行任务页面"""
+
     def __init__(self):
         self.running_status = False
         self.full_automation_task_page: Optional[FullAutomaticTaskPage] = None
         self.semi_automation_task_page: Optional[SemiAutomaticTaskPage] = None
         super().__init__()
         self.setStyleSheet(self.STYLE_MODERN)
-
 
     def add_tab_widgets(self) -> List[TabWidgetInfo]:
         self.full_automation_task_page = FullAutomaticTaskPage()

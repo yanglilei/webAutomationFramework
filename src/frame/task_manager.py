@@ -15,6 +15,7 @@ class TaskManager(QObject):
     user_task_finished_signal = pyqtSignal(str, bool)  # 单个用户任务完成信号
     all_task_finished_signal = pyqtSignal()  # 所有任务完成信号
     progress_update_signal = pyqtSignal(int)  # 进度更新信号
+
     # running_status_signal = pyqtSignal(bool)  # 任务运行状态信号。True-运行中，False-未运行
 
     def __init__(self, logger):
@@ -102,6 +103,9 @@ class TaskManager(QObject):
                 task_config["task_tmpl_config"] = config
                 # task_batches_config.append(task_config)
                 task_batches_config.append((task_config, global_config))
+
+            if not task_batches_config:
+                raise BusinessException("配置有误，请检查任务模板是否配置了节点！")
             return task_batches_config
         except Exception as e:
             self.logger.error(f"加载配置失败：{str(e)}")

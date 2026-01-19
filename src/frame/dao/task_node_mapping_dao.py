@@ -81,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_tmpl_node_mapping_node_id ON tb_task_tmpl
             sql = """INSERT INTO tb_task_tmpl_node_mapping (task_tmpl_id, node_id, pre_node_id, next_node_id, node_params)
                              VALUES (?, ?, ?, ?, ?)"""
             data_list = [(task_tmpl_id, update_info["node_id"], update_info.get("pre_node_id", ""),
-                          update_info.get("next_node_id", ""), self.json_serialize(update_info.get("node_params", {})))
+                          update_info.get("next_node_id", ""), update_info.get("node_params", "{}"))
                          for
                          update_info in update_infos]
             try:

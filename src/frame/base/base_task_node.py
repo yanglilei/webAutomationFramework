@@ -310,7 +310,7 @@ class JSNode(BaseNode, SeleniumWebOperator):
             # JS代码需暴露全局函数：executeTaskNode(parameters)
             js_exec_code = f"""
                 // 传入参数
-                const params = {json.dumps(js_params)};
+                const params = {json.dumps(js_params, ensure_ascii=False)};
                 // 执行JS组件逻辑
                 {js_code}
                 // 返回节点结果

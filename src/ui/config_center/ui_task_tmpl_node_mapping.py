@@ -29,6 +29,11 @@ class UITaskNodeMapping(BaseTableWidget):
             TableHeader('节点参数', 'native_node_params')
         ]
 
+    def get_edit_metadata(self) -> dict:
+        return {"bind_node_params": EditableField("bind_node_params", "textedit"),
+                "native_node_params": EditableField("native_node_params", "textedit")
+                }
+
     def after_first_render_table(self, payloads):
         """
         初次渲染表格成功后的回调
@@ -45,6 +50,9 @@ class UITaskNodeMapping(BaseTableWidget):
 
     def get_records(self, condition: dict, page=1, page_size=0) -> Tuple[List[dict], int]:
         nodes = self.node_dao.get_by_task_tmpl_id(self.task_tmpl_id)
+        for node in nodes:
+            node["bind_node_params"] = self.json_serialize(node.get("bind_node_params"))
+            node["native_node_params"] = self.json_serialize(node.get("native_node_params"))
         return nodes, len(nodes)
 
     def get_add_one_callable(self) -> Callable:

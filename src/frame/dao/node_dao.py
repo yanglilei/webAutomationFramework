@@ -1,8 +1,6 @@
 import json
 from typing import Dict, List, Optional, Any, Tuple
 
-from sympy.physics.vector.printing import params
-
 from src.frame.common.decorator.singleton import singleton
 from src.frame.common.exceptions import BusinessException
 from src.frame.dao.base_db import BaseDB
@@ -41,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_node_status ON tb_node(status); -- 新增状�
         sql = """INSERT INTO tb_node (code, name, component_path, type, description, node_params)
                  VALUES (?, ?, ?, ?, ?, ?)"""
         params = (node_info["code"], node_info["name"], node_info["component_path"], node_info["type"],
-                  node_info.get("description", ""), self.json_serialize(node_info.get("node_params", {})))
+                  node_info.get("description", ""), node_info.get("node_params", "{}"))
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(sql, params)
@@ -72,7 +70,7 @@ WHERE t2.task_tmpl_id = ?
             row_dict = self.dict_from_row(row)  # 转为字典（复用BaseDB的方法）
             # JSON反序列化（绑定参数+节点原生参数）
             row_dict["bind_node_params"] = json.loads(row_dict["bind_node_params"]) if row_dict[
-                            "bind_node_params"] else {}
+                "bind_node_params"] else {}
             row_dict["native_node_params"] = json.loads(row_dict["native_node_params"]) if row_dict[
                 "native_node_params"] else {}
             row_dict["node_params"] = {**row_dict["native_node_params"], **row_dict["bind_node_params"]}
@@ -128,7 +126,7 @@ WHERE t2.task_tmpl_id = ?
             raise BusinessException(f"更新节点失败 | 节点编号：{node_id} 不存在")
 
         if update_info.get("code") != record.get("code") and self.get_by_code(update_info["code"]):
-                raise BusinessException(f"更新节点失败 | 节点编号：{update_info['code']} 已存在")
+            raise BusinessException(f"更新节点失败 | 节点编号：{update_info['code']} 已存在")
 
         # 2. 过滤空字段，组装更新SQL
         update_fields = []
@@ -154,14 +152,15 @@ WHERE t2.task_tmpl_id = ?
     def delete_by_ids(self, node_ids: List[int]):
         with self.get_db_connection() as conn:
             node_ids_placeholders = ','.join(['?'] * len(node_ids))
-            sql = """select * from tb_task_tmpl_node_mapping where node_id in (%s) or pre_node_id in (%s) or next_node_id in (%s)""" % (node_ids_placeholders, node_ids_placeholders, node_ids_placeholders)
+            sql = """select * from tb_task_tmpl_node_mapping where node_id in (%s) or pre_node_id in (%s) or next_node_id in (%s)""" % (
+            node_ids_placeholders, node_ids_placeholders, node_ids_placeholders)
             params = []
             params.extend(node_ids)
             params.extend(node_ids)
             params.extend(node_ids)
             rows = conn.execute(sql, params).fetchall()
             node_list = [self.dict_from_row(row) for row in rows]
-            if any([len(node)>0 for node in node_list]):
+            if any([len(node) > 0 for node in node_list]):
                 raise BusinessException(f"节点ID={node_ids} 正在被任务引用，请先解除引用关系")
             sql = """DELETE FROM tb_node WHERE id IN (%s)""" % node_ids_placeholders
             conn.execute(sql, node_ids)
@@ -184,7 +183,8 @@ WHERE t2.task_tmpl_id = ?
             self.logger.exception(f"更新节点失败 | 节点编号：{node_id}")
             return False
 
-    def get_total_count(self, node_type: Optional[str] = None, name: Optional[str] = None, code: Optional[str] = None) -> int:
+    def get_total_count(self, node_type: Optional[str] = None, name: Optional[str] = None,
+                        code: Optional[str] = None) -> int:
         """获取节点总条数（支持按业务类型筛选，分页必备）"""
         sql = "SELECT COUNT(*) AS total FROM tb_node"
         params = []
@@ -263,7 +263,7 @@ WHERE t2.task_tmpl_id = ?
                       page_size: int = 10,
                       node_type: Optional[str] = None,
                       name: Optional[str] = None,
-                      code: Optional[str] = None,) -> Tuple[List[Dict[str, Any]], int]:
+                      code: Optional[str] = None, ) -> Tuple[List[Dict[str, Any]], int]:
         """
         ✅ 对外统一调用【推荐】- 标准化分页数据返回（Qt UI直接绑定）
         :return: 包含总条数、总页数、分页参数、数据的完整字典

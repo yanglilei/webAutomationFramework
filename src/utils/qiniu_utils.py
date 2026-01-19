@@ -232,7 +232,7 @@ class QiniuService:
         # 上传文件到存储后， 存储服务将文件名和文件大小回调给业务服务器。
         self.policy.update({
             "callbackUrl": self.callback_url,
-            'callbackBody': json.dumps(self.callback_body),
+            'callbackBody': json.dumps(self.callback_body, ensure_ascii=False),
             "callbackBodyType": "application/json"
         })
 
