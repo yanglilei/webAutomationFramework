@@ -1,3 +1,4 @@
+import json
 from typing import List, Tuple, Dict, Callable
 
 from PyQt5.QtGui import QColor
@@ -51,8 +52,8 @@ class UITaskNodeMapping(BaseTableWidget):
     def get_records(self, condition: dict, page=1, page_size=0) -> Tuple[List[dict], int]:
         nodes = self.node_dao.get_by_task_tmpl_id(self.task_tmpl_id)
         for node in nodes:
-            node["bind_node_params"] = self.json_serialize(node.get("bind_node_params"))
-            node["native_node_params"] = self.json_serialize(node.get("native_node_params"))
+            node["bind_node_params"] = json.dumps(node.get("bind_node_params"), ensure_ascii=False)
+            node["native_node_params"] = json.dumps(node.get("native_node_params"), ensure_ascii=False)
         return nodes, len(nodes)
 
     def get_add_one_callable(self) -> Callable:
