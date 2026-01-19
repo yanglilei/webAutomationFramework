@@ -1,0 +1,89 @@
+import time
+from dataclasses import dataclass
+from typing import Dict, Any
+
+from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
+
+
+@dataclass
+class HXJYWNoPlay(BaseMonitorCourseTaskNode):
+    """海西教育网无需播放自动计时版本！仙游和涵江的支持该版本"""
+    project_code: str = ""  # 项目编码
+
+    def handle_prev_output(self, prev_output: Dict[str, Any]):
+        project_code = prev_output.get("project_code", "")
+        if project_code and project_code.strip():
+            self.project_code = project_code.strip()
+
+    def single_poll_monitor(self):
+        if self._is_current_course_finished():
+            # 课程结束
+            self.terminate("已学完！")
+            return
+
+        # 处理弹窗大问题，各种弹窗！
+        self._handle_content_pause_tips()
+        if self._handle_content_finished_tips():
+            # 等待蒙版消失
+            time.sleep(2)
+
+        # 处理“我还在听”
+        self._handle_i_am_here()
+        # 处理被暂停，莫名的
+        self._handle_pause()
+
+        total_time_elem = self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyBestMinutesNumber']")
+        learned_time_elem = self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyMinutesNumber']")
+        self.logger.info(
+            f"用户【{self.username_showed}】【{self.course_name}】，总时间：{total_time_elem.text}分钟，已学习时间：{learned_time_elem.text}分钟")
+
+    def _is_current_course_finished(self):
+        finished_tips_elem = self.get_elem_with_wait_by_xpath(3, "//span[@id='bestMinutesTips']", False)
+        return True if finished_tips_elem and finished_tips_elem.is_displayed() else False
+
+    def _handle_content_pause_tips(self):
+        confirm_btn = self.get_elem_by_xpath(
+            "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
+
+        if confirm_btn and confirm_btn.is_enabled() and confirm_btn.is_displayed():
+            try:
+                confirm_btn.click()
+            except:
+                pass
+            else:
+                # 等待确认按钮消失
+                self.wait_for_disappeared(2, confirm_btn)
+                # 等待蒙版消失
+                self._wait_for_shade_disappear()
+
+    def _handle_content_finished_tips(self):
+        ret = False
+        xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频已播放完成')]]//a[text()='Ok，我知道了！']"
+        confirm_btn = self.get_elem_by_xpath(xpath)
+        if confirm_btn and confirm_btn.is_enabled() and confirm_btn.is_displayed():
+            confirm_btn.click()
+            # 等待对话框消失
+            self.wait_for_disappeared(2, confirm_btn)
+            # 等待蒙版消失
+            self._wait_for_shade_disappear()
+            ret = True
+        return ret
+
+    def _wait_for_shade_disappear(self):
+        self.wait_for_disappeared_by_xpath(2, "//div[@class='layui-layer-shade']")
+
+    def _handle_i_am_here(self):
+        # 处理弹窗“你还在认真学习吗？”
+        if self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
+            # 弹出了“你还在认真学习吗？”的对话框
+            verify_code_val = self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']").text
+            self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']").send_keys(
+                verify_code_val)
+            self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']").click()
+            self.logger.info(f"用户【{self.username_showed}】处理“您还在认真学习吗？“弹窗成功")
+
+    def _handle_pause(self):
+        # 点击弹窗中的确认按钮之后，再点击播放按钮，视频才能正常播放
+        self.play_video("div.ccH5playerBox video")
