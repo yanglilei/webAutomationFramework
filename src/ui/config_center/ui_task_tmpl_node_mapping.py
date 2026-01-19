@@ -32,7 +32,7 @@ class UITaskNodeMapping(BaseTableWidget):
 
     def get_edit_metadata(self) -> dict:
         return {"bind_node_params": EditableField("bind_node_params", "textedit"),
-                "native_node_params": EditableField("native_node_params", "textedit")
+                "native_node_params": EditableField("native_node_params", "textedit", readonly=True)
                 }
 
     def after_first_render_table(self, payloads):
@@ -58,6 +58,22 @@ class UITaskNodeMapping(BaseTableWidget):
 
     def get_add_one_callable(self) -> Callable:
         pass
+
+    def _validate_node_params(self, node_params) -> bool:
+        if node_params:
+            try:
+                node_params = json.loads(node_params)
+                if not isinstance(node_params, dict):
+                    return False
+            except Exception as e:
+                return False
+        return True
+
+    def prepare_for_update(self, record_id, update_data) -> bool:
+        if not self._validate_node_params(update_data.get("bind_node_params")):
+            QMessageBox.warning(self, "验证错误", "任务参数格式错误！必须为JSON格式！")
+            return False
+        return True
 
     def get_update_callable(self) -> Callable:
         return self.task_node_mapping_dao.update_by_id
@@ -93,7 +109,7 @@ class UITaskNodeMapping(BaseTableWidget):
                 QMessageBox.error(self, "提示", f"设置起始节点失败：{str(e)}")
         # self.task_tmpl_node_mapping_dao.set_start_node(self.task_tmpl_id, self.get_selected_rows()[0].get("id"))
 
-    def validate_new_data(self, data):
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         # if (self._is_empty(data.get('name')) or self._is_empty(data.get('component_path'))
         #         or self._is_empty(data.get('code')) or self._is_empty(
@@ -108,13 +124,12 @@ class UITaskNodeMapping(BaseTableWidget):
 
     def get_edit_field_attributes(self, field_name: str):
         return [
-            EditableField("node_id", "readonly"),
-            EditableField("name", "readonly"),
-            EditableField("name", "readonly"),
-            EditableField("native_node_params", "readonly"),
+            EditableField("node_id", "label"),
+            EditableField("name", "label"),
+            EditableField("native_node_params", "textedit", readonly=True),
             EditableField("bind_node_params", "textedit"),
-            EditableField("update_time", "readonly"),
-            EditableField("create_time", "readonly"), ]
+            EditableField("update_time", "label"),
+            EditableField("create_time", "label"), ]
 
     def validate_import_data(self, data):
         # 验证导入数据的有效性

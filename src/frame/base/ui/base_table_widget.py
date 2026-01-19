@@ -119,12 +119,12 @@ class EditableField:
     field_name: str  # 字段名
     # 字段类型
     # 可选值如下：
-    # text：文本
+    # text：可编辑文本
     # select：单选
     # date：日期
-    # hide：隐藏
-    # readonly：只读
-    field_type: str
+    # label: 标签
+    # textedit: 多行文本
+    field_type: str = 'text'
     select_options: list = None  # select类型的可选值，第一个元素为名称，第二个元素为对应的值，例如：[(name1, value1), (name2, value2)]
     related_field: Optional[str] = None  # 关联字段名（如project_name）
     # 关联值获取器：接收当前选中的选项索引，返回关联字段的值
@@ -132,6 +132,11 @@ class EditableField:
     related_value_getter: Optional[Callable[[int], Any]] = None
     # 生成的组件
     widget: QWidget = None
+    # 字段属性
+    # 隐藏/显示
+    visible: bool = True
+    # 只读
+    readonly: bool = False
 
     def __post_init__(self):
         if self.select_options is None:
@@ -530,8 +535,14 @@ class BaseTableWidget(QWidget):
             # 根据最新元数据创建组件
             field = self._create_add_widget_with_metadata(field_name, "", metadata)
             if field and field.widget:
+                if not field.visible:
+                    continue
+                widget = field.widget
+                if hasattr(widget, "setVisible"):
+                    widget.setVisible(field.visible)
+                if hasattr(widget, "setReadOnly"):
+                    widget.setReadOnly(field.readonly)
                 self.add_fields[field_name] = field
-                # if header.is_column_visible:  # 隐藏列不显示，但是会把数据添加到字段字典中
                 form_layout.addRow(QLabel(show_name + ":"), field.widget)
 
         # 按钮布局（原有逻辑）
@@ -562,12 +573,13 @@ class BaseTableWidget(QWidget):
             widget = QLineEdit(value)
             widget.setPlaceholderText("YYYY-MM-DD")
             widget.mousePressEvent = self.create_date_handler(widget)
-        elif field_type in ("hide", "readonly"):
+        elif field_type in "hide":
             widget = None
         elif field_type == "textedit":
             widget = QTextEdit(value)
         else:
             widget = QLineEdit(value)
+
         field_attr.widget = widget
         return field_attr
 
@@ -594,23 +606,8 @@ class BaseTableWidget(QWidget):
         # hidden_fields = self.add_hidden_fields()
         # data.update(hidden_fields)
 
-        # 数据验证
-        if not self.validate_new_data(data):
-            return
-
-        self.do_add_one(data)
-
-        # 新增记录成功回调
-        # self.add_row_succ.emit(data)
-        # self.add_succ_callback(data)
-
-    def add_succ_callback(self, data):
-        """
-        新增记录成功回调
-        :param data: 新的记录
-        :return:
-        """
-        pass
+        if self.prepare_for_add(data):
+            self.do_add_one(data)
 
     def async_import(self):
         # 禁用按钮防止重复点击
@@ -1354,7 +1351,8 @@ class BaseTableWidget(QWidget):
         )
 
         if reply == QMessageBox.Yes:
-            self.do_delete(selected_ids)
+            if self.prepare_for_delete(selected_ids):
+                self.do_delete(selected_ids)
 
     def prev_page(self):
         if self.page_num > 1:
@@ -1558,6 +1556,13 @@ class BaseTableWidget(QWidget):
             # 根据字段类型+最新元数据创建对应组件
             field = self._create_edit_widget_with_metadata(field_name, field_value, metadata)
             if field and field.widget:
+                if not field.visible:
+                    continue
+                widget = field.widget
+                if hasattr(widget, "setVisible"):
+                    widget.setVisible(field.visible)
+                if hasattr(widget, "setReadOnly"):
+                    widget.setReadOnly(field.readonly)
                 self.edit_fields[field_name] = field
                 # if header.is_column_visible:
                 form_layout.addRow(QLabel(label_text + ":"), field.widget)
@@ -1596,15 +1601,18 @@ class BaseTableWidget(QWidget):
             widget = QLineEdit(value)
             widget.setPlaceholderText("YYYY-MM-DD")
             widget.mousePressEvent = self.create_date_handler(widget)
-        elif field_type == "readonly":
-            widget = QLabel(value)
+        # elif field_type == "readonly":
+        #     widget = QLabel(value)
         elif field_type == "text":
             widget = QLineEdit(value)
         elif field_type == "textedit":
             widget = QTextEdit(value)
             widget.setFixedHeight(120)
+        elif field_type == "label":
+            widget = QLabel(value)
         else:
             widget = None
+
         field_attr.widget = widget
         return field_attr
 
@@ -1652,7 +1660,36 @@ class BaseTableWidget(QWidget):
 
         # 执行更新
         record_id = int(self.table.item(row, 1).text())  # 假设ID在第1列
-        self.do_update(record_id, update_data)
+        if self.prepare_for_update(record_id, update_data):
+            self.do_update(record_id, update_data)
+
+    def prepare_for_update(self, record_id, update_data) -> bool:
+        """
+        更新的前置操作
+        子类自行实现逻辑
+        :param record_id: 记录ID
+        :param update_data: 更新的内容
+        :return: True-成功；False-失败
+        """
+        return True
+
+    def prepare_for_add(self, add_data) -> bool:
+        """
+        添加的前置操作
+        子类自行实现逻辑
+        :param add_data: 添加的内容
+        :return: True-成功；False-失败
+        """
+        return True
+
+    def prepare_for_delete(self, record_ids: List[int]) -> bool:
+        """
+        删除的前置操作
+        子类自行实现逻辑
+        :param record_ids: 记录ID列表
+        :return: True-成功；False-失败
+        """
+        return True
 
     def get_field_attribute(self, field_name: str) -> str:
         """
@@ -1664,30 +1701,6 @@ class BaseTableWidget(QWidget):
         hide：隐藏
         """
         return 'text'
-
-    def choose_add_field_attribute(self, field_name: str) -> EditableField:
-        # 默认为text（文本）
-        ret = EditableField(field_name, "text")
-        field_attributes = self.get_add_field_attributes(field_name)
-        if field_attributes:
-            for field_attribute in field_attributes:
-                if field_name == field_attribute.field_name:
-                    ret = field_attribute
-                    break
-
-        return ret
-
-    def choose_edit_field_attribute(self, field_name: str) -> EditableField:
-        # 默认为text（文本）
-        ret = EditableField(field_name, "text")
-        # field_attributes = self.get_edit_field_attributes(field_name)
-        field_attributes = self.get_edit_metadata(field_name)
-        if field_attributes:
-            for k, field_attribute in field_attributes.items():
-                if field_name == field_attribute.field_name:
-                    ret = field_attribute
-                    break
-        return ret
 
     def get_add_field_attributes(self, field_name: str) -> List[EditableField]:
         return []
@@ -1713,10 +1726,6 @@ class BaseTableWidget(QWidget):
     def get_field_options(self, field_name: str) -> List[Tuple[str, Any]]:
         """返回选择字段的选项列表（显示文本，实际值）"""
         return []
-
-    def validate_new_data(self, data: dict) -> bool:
-        """验证新增数据（子类实现）"""
-        return True
 
     def validate_import_data(self, data: dict) -> bool:
         """验证导入数据（子类实现）"""
@@ -1780,7 +1789,7 @@ class BaseTableWidget(QWidget):
     def batch_insert(self, data_list: List[dict]):
         """批量插入数据（子类实现）"""
         self.async_task_scheduler.submit_task(self.get_batch_insert_callable(), data_list,
-                                              finished_callback=self.on_delete_result)
+                                              finished_callback=self.on_batch_insert_result)
 
     def get_batch_insert_callable(self) -> Callable:
         pass
@@ -1888,9 +1897,9 @@ class BaseTableWidget(QWidget):
         if success:
             self.edit_dialog.accept()
             self.async_refresh_table()
-            QMessageBox.information(self, "成功", "数据修改成功")
+            QMessageBox.information(self, "提示", "数据修改成功！")
         else:
-            QMessageBox.critical(self, "保存失败", f"保存时发生错误：{msg}")
+            QMessageBox.critical(self, "警告", f"保存失败！错误：{msg}")
 
     @abstractmethod
     def get_update_callable(self) -> Callable:

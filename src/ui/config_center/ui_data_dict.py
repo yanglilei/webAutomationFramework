@@ -43,7 +43,7 @@ class DataDictPage(BaseTableWidget):
     def _is_empty(self, val):
         return True if val is None or not str(val).strip() else False
 
-    def validate_new_data(self, data):
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         if (self._is_empty(data.get('key')) or self._is_empty(data.get('name')) or self._is_empty(data.get('value'))):
             QMessageBox.warning(self, "验证错误", "必要字段不能为空！")
@@ -54,15 +54,15 @@ class DataDictPage(BaseTableWidget):
         # 批量插入数据，没开通
         pass
 
-    def get_add_field_attributes(self, field_name: str):
-        return [
-            EditableField("update_time", "hide"),
-            EditableField("create_time", "hide"), ]
+    def get_edit_metadata(self) -> dict:
+        return {"update_time": EditableField("update_time", "label"),
+                "create_time": EditableField("create_time", "label")}
 
-    def get_edit_field_attributes(self, field_name: str):
-        return [
-            EditableField("update_time", "readonly"),
-            EditableField("create_time", "readonly"), ]
+    def get_add_metadata(self) -> dict:
+        metadata = self.get_edit_metadata()
+        metadata.get("update_time").visible = False
+        metadata.get("create_time").visible = False
+        return metadata
 
     def validate_import_data(self, data):
         # 验证导入数据的有效性

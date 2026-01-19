@@ -90,7 +90,7 @@ class UITaskTmpl(BaseTableWidget):
     def _is_empty(self, val):
         return True if val is None or not str(val).strip() else False
 
-    def validate_new_data(self, data):
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         if (self._is_empty(data.get('name')) or self._is_empty(data.get('domain'))
                 or self._is_empty(data.get('login_interval'))):
@@ -121,6 +121,7 @@ class UITaskTmpl(BaseTableWidget):
         project_options = [(project.get("name"), project.get("id")) for project in projects]
 
         return {"project_id": EditableField("project_id", "select", project_options),
+                "start_node_id": EditableField("start_node_id", "text", visible=False),
                 "business_type": EditableField("business_type", "select",
                                                [(value, key) for key, value in self.business_type_mapping.items()]),
                 "is_quit_browser_when_finished": EditableField("is_quit_browser_when_finished", "select",
@@ -130,13 +131,12 @@ class UITaskTmpl(BaseTableWidget):
                                             [(value, key) for key, value in self.start_mode_mapping.items()]),
                 "status": EditableField("status", "select",
                                         [(value, key) for key, value in self.status_mapping.items()]),
-                "update_time": EditableField("update_time", "readonly"),
-                "create_time": EditableField("create_time", "readonly"), }
+                "update_time": EditableField("update_time", "label"),
+                "create_time": EditableField("create_time", "label"), }
 
     def get_add_metadata(self) -> dict:
         metadata = self.get_edit_metadata()
-        metadata["status"].field_type = "hide"
-        metadata["start_node_id"] = EditableField("start_node_id", "hide")
+        metadata["status"].visible = False
         return metadata
 
     def validate_import_data(self, data):

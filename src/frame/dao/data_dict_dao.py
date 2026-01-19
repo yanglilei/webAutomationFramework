@@ -22,7 +22,7 @@ class DataDictDAO(BaseDB):
         );"""
         return sql.strip()
 
-    def add_data_dict(self, data_dict_info: Dict[str, Any]) -> bool | None:
+    def add_one(self, data_dict_info: Dict[str, Any]) -> bool | None:
         sql = """INSERT INTO tb_data_dict (key, value, name, remark) VALUES (?, ?, ?, ?)"""
         params = (
         data_dict_info["key"], data_dict_info["value"], data_dict_info["name"], data_dict_info.get("remark", None))
@@ -200,3 +200,9 @@ class DataDictDAO(BaseDB):
 
         # 标准化返回格式（和TaskDAO完全一致，UI调用零适配成本）
         return dict_list, total_count
+
+    def delete_by_ids(self, data_dict_ids: List[int]):
+        with self.get_db_connection() as conn:
+            data_dict_ids_placeholders = ','.join(['?'] * len(data_dict_ids))
+            sql = """DELETE FROM tb_data_dict WHERE id IN (%s)""" % data_dict_ids_placeholders
+            conn.execute(sql, data_dict_ids)

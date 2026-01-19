@@ -26,7 +26,7 @@ class UITaskBatch(BaseTableWidget):
         self.project_mapping = {}
         self.force_stop_action = None
         self.btn_force_terminate: Optional[QPushButton] = None  # 强制终止按钮
-        super().__init__(is_need_search=True, is_support_clear_all=False, is_support_export=True)
+        super().__init__(is_need_search=True, is_support_clear_all=False, is_support_export=False, is_support_add=False)
 
     def get_headers(self) -> List[TableHeader]:
         return [
@@ -102,7 +102,7 @@ class UITaskBatch(BaseTableWidget):
     #         # 发送信号给TaskManager
     #         # self.task_batch_dao.update_by_id(batch_id, {"execute_status": 4})
 
-    def validate_new_data(self, data):
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         # if (self._is_empty(data.get('name')) or self._is_empty(data.get('domain'))
         #         or self._is_empty(data.get('login_interval'))):
@@ -142,14 +142,48 @@ class UITaskBatch(BaseTableWidget):
                     "execute_status": EditableField("execute_status", "select",
                                                     [(value, key) for key, value in
                                                               self.execute_status_mapping.items()]),
-                    "update_time": EditableField("update_time", "readonly"),
-                    "create_time": EditableField("create_time", "readonly")
+                    "user_info": EditableField("user_info", "textedit"),
+                    "queue_time": EditableField("queue_time", "label"),
+                    "batch_no": EditableField("batch_no", "label"),
+                    "total_user": EditableField("total_user", "label"),
+                    "success_user": EditableField("success_user", "label"),
+                    "fail_user": EditableField("fail_user", "label"),
                     }
 
         return metadata
 
     def get_add_metadata(self) -> dict:
-        return self.get_edit_metadata()
+        projects = self.project_dao.get_all()
+        task_tmpls = self.task_tmpl_dao.get_all()
+        project_options = [(project.get("name"), project.get("id")) for project in projects]
+        task_tmpl_options = [(task_tmpl.get("name"), task_tmpl.get("id")) for task_tmpl in task_tmpls]
+
+        metadata = {
+            # "project_name": EditableField("project_name", "select", project_options, "project_id",
+            #                             self.create_related_value_getter(project_options)),
+            "project_name": EditableField("project_name", "select", project_options, "project_id"),
+            "task_tmpl_name": EditableField("task_tmpl_name", "select", task_tmpl_options,
+                                            "task_tmpl_id"),
+            "business_type": EditableField("business_type", "select",
+                                           [(value, key) for key, value in
+                                            self.business_type_mapping.items()]),
+            "user_mode": EditableField("user_mode", "select",
+                                       [(value, key) for key, value in
+                                        self.user_mode_mapping.items()]),
+            "run_mode": EditableField("run_mode", "select",
+                                      [(value, key) for key, value in self.run_mode_mapping.items()]),
+            "execute_status": EditableField("execute_status", "select",
+                                            [(value, key) for key, value in
+                                             self.execute_status_mapping.items()], visible=False),
+            "user_info": EditableField("user_info", "textedit"),
+            "queue_time": EditableField("queue_time", visible=False),
+            "batch_no": EditableField("batch_no", visible=False),
+            "total_user": EditableField("total_user", visible=False),
+            "success_user": EditableField("success_user", visible=False),
+            "fail_user": EditableField("fail_user", visible=False),
+        }
+
+        return metadata
 
     def validate_import_data(self, data):
         # 验证导入数据的有效性

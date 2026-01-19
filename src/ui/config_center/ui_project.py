@@ -1,7 +1,7 @@
 from typing import List, Tuple, Dict, Callable
 
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QMessageBox, QLabel
+from PyQt5.QtWidgets import QMessageBox
 
 from src.frame.base.ui.base_table_widget import BaseTableWidget, EditableField, BaseAsyncImportWorker, TableHeader, \
     QueryField
@@ -83,7 +83,7 @@ class ProjectPage(BaseTableWidget):
     def _is_empty(self, val):
         return True if val is None or not str(val).strip() else False
 
-    def validate_new_data(self, data):
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         if (self._is_empty(data.get('name'))):
             QMessageBox.warning(self, "验证错误", "必要字段不能为空！")
@@ -109,11 +109,14 @@ class ProjectPage(BaseTableWidget):
         pass
 
     def get_edit_metadata(self) -> dict:
-        return {"update_time": EditableField("update_time", "hide"),
-                "create_time": EditableField("create_time", "hide")}
+        return {"update_time": EditableField("update_time", "label"),
+                "create_time": EditableField("create_time", "label")}
 
     def get_add_metadata(self) -> dict:
-        return self.get_edit_metadata()
+        metadata = self.get_edit_metadata()
+        metadata.get("update_time").visible = False
+        metadata.get("create_time").visible = False
+        return metadata
 
     def validate_import_data(self, data):
         # 验证导入数据的有效性

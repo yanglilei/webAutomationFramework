@@ -1,3 +1,4 @@
+import json
 from typing import List, Tuple, Dict, Callable
 
 from PyQt5.QtCore import pyqtSignal
@@ -74,14 +75,31 @@ class NodePage(BaseTableWidget):
     def _is_empty(self, val):
         return True if val is None or not str(val).strip() else False
 
-    def validate_new_data(self, data):
+    def _validate_node_params(self, node_params) -> bool:
+        if node_params:
+            try:
+                node_params = json.loads(node_params)
+                if not isinstance(node_params, dict):
+                    return False
+            except Exception as e:
+                return False
+        return True
+
+    def prepare_for_add(self, data):
         # 示例：验证必填字段
         if (self._is_empty(data.get('name')) or self._is_empty(data.get('component_path'))
                 or self._is_empty(data.get('code')) or self._is_empty(
                     data.get('type'))):
             QMessageBox.warning(self, "验证错误", "必要字段不能为空！")
             return False
+
+        if not self._validate_node_params(data.get("node_params")):
+            QMessageBox.warning(self, "验证错误", "节点参数格式错误！必须为JSON格式！")
+            return False
         return True
+
+    def prepare_for_update(self, record_id, update_data) -> bool:
+        return self.prepare_for_add(update_data)
 
     def batch_insert(self, data_list: List[Dict]):
         # 批量插入数据，没开通
@@ -93,11 +111,14 @@ class NodePage(BaseTableWidget):
                     EditableField("type", "select", [(value, key) for key, value in self.node_type_mapping.items()]),
                 "status": EditableField("status", "hide"),
                 "node_params": EditableField("node_params", "textedit"),
-                "update_time": EditableField("update_time", "hide"),
-                "create_time": EditableField("create_time", "hide"), }
+                "update_time": EditableField("update_time", "label"),
+                "create_time": EditableField("create_time", "label"), }
 
     def get_add_metadata(self) -> dict:
-        return self.get_edit_metadata()
+        metadata = self.get_edit_metadata()
+        metadata.get("update_time").visible = False
+        metadata.get("create_time").visible = False
+        return metadata
 
     def validate_import_data(self, data):
         # 验证导入数据的有效性
@@ -160,6 +181,22 @@ class UINodeInTaskConfigPage(NodePage):
     # def get_data(self, condition: dict, page=1, page_size=0) -> Tuple[List[dict], int]:
     #     nodes = self.node_dao.get_by_task_tmpl_id(self.task_tmpl_id)
     #     return nodes, len(nodes)
+    def prepare_for_update(self, record_id, update_data) -> bool:
+        if update_data.get("node_params"):
+            try:
+                json.loads(update_data.get("node_params"))
+            except:
+                QMessageBox.warning(self, "提示", "节点参数格式错误！必须为JSON格式！")
+                return False
+        return True
+
+    def prepare_for_add(self, add_data) -> bool:
+        if add_data.get("node_params"):
+            try:
+                json.loads(add_data.get("node_params"))
+            except:
+                QMessageBox.warning(self, "提示", "节点参数格式错误！必须为JSON格式！")
+                return False
 
     def save_task_config(self):
         update_infos = []
