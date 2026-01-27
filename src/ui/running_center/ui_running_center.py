@@ -1,7 +1,10 @@
 from typing import List
 
+from PyQt5.QtCore import QThread
+
 from src.frame.base.ui.base_ui import TabWidgetInfo, BaseTabWidget
-from src.ui.running_center.ui_execute_task import FullAutomaticTaskPage, UIExecuteTask
+from src.frame.task_manager import TaskManager
+from src.ui.running_center.ui_execute_task import UIExecuteTask
 from src.ui.running_center.ui_log import LogPage
 
 
@@ -18,3 +21,4 @@ class RunningCenterWidget(BaseTabWidget):
 
     def has_running_task(self) -> bool:
         return self.tab_execute_task.has_running_task()
+

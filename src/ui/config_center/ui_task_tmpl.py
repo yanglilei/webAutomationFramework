@@ -137,6 +137,8 @@ class UITaskTmpl(BaseTableWidget):
     def get_add_metadata(self) -> dict:
         metadata = self.get_edit_metadata()
         metadata["status"].visible = False
+        metadata["update_time"].visible = False
+        metadata["create_time"].visible = False
         return metadata
 
     def validate_import_data(self, data):

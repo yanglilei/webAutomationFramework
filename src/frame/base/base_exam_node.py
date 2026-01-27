@@ -1,13 +1,14 @@
+import asyncio
 import os
 import time
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from typing import Tuple, Dict, Any
 
-from selenium.webdriver.remote.webelement import WebElement
+from playwright.sync_api import Locator
 
 from src.frame.base.base_task_node import BasePYNode
-from src.frame.common.constants import NodeState, ControlCommand
+from src.frame.common.constants import NodeState
 from src.frame.common.question_bank.base_question_bank import BaseQuestionBankHandler
 
 
@@ -29,16 +30,16 @@ class BaseMCQExamTaskNode(BasePYNode):
         "options": {}  # 选项信息
     })
 
-    def register_builtin_commands(self):
-        @self.register_command(ControlCommand.PAUSE)
-        def pause():
-            self.logger.info("考试暂停！")
-            self.state = NodeState.PAUSED
-
-        @self.register_command(ControlCommand.RESUME)
-        def resume():
-            self.logger.info("考试继续！")
-            self.state = NodeState.RUNNING
+    # def register_builtin_commands(self):
+    #     @self.register_command(ControlCommand.PAUSE)
+    #     def pause():
+    #         self.logger.info("考试暂停！")
+    #         self.state = NodeState.PAUSED
+    #
+    #     @self.register_command(ControlCommand.RESUME)
+    #     def resume():
+    #         self.logger.info("考试继续！")
+    #         self.state = NodeState.RUNNING
 
     def set_up(self):
         self.interval = float(self.node_config.get("node_params", {}).get("interval"))  # 间隔时间
@@ -54,7 +55,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         """
         pass
 
-    def execute(self, context: Dict) -> bool:
+    async def execute(self, context: Dict) -> bool:
         self.logger.info("开始做题！")
         # 非常重要！如果遇到需要手动进入到考试页面的情况，则该处直接设置状态为PAUSED，等待手动点击开始按钮，发送继续的命令！
         self.state = NodeState.RUNNING
@@ -68,19 +69,20 @@ class BaseMCQExamTaskNode(BasePYNode):
                     time.sleep(2)
                     continue
                 # 切到当前题目窗口
-                self.switch_to_window_by_url_key("exam-ans")
+                await self.switch_to_window_by_url_key("exam-ans")
                 # 做当前题目
-                if self.finish_current_question():
-                    if not self.has_next_question():
+                if await self.finish_current_question():
+                    if not await self.has_next_question():
                         # 完成了最后一题
                         break
                     # 等待若干秒
-                    time.sleep(self.interval)
+                    # time.sleep(self.interval)
+                    await asyncio.sleep(self.interval)
                     # 切到下一题
-                    status, desc = self.go_next_question()
+                    status, desc = await self.go_next_question()
                     if status:
                         # 等待当前题目元素消失，防止卡顿导致切换下一题比较慢！必须等待当前题目元素消失，保证成功切换下一题
-                        self.wait_for_disappeared(10, self.current_question_info.get("question_elem"))
+                        await self.wait_for_disappeared(10, self.current_question_info.get("question_elem"))
                         # 切换到下一题了，重置当前题目信息
                         self.current_question_info = {"question_no": "", "question_desc": "", "question_elem": None,
                                                       "options分": {}}
@@ -101,9 +103,9 @@ class BaseMCQExamTaskNode(BasePYNode):
                     # 根据节点参数 auto_commit 决定是否自动提交
                     try:
                         # 交卷
-                        self.commit()
+                        await self.commit()
                         # 处理结果
-                        self.handle_after_commit()
+                        await self.handle_after_commit()
                     except:
                         self.logger.exception("交卷失败，请人工处理：")
                         ret = False
@@ -114,15 +116,15 @@ class BaseMCQExamTaskNode(BasePYNode):
                 self.task_config["is_quit_browser_when_finished"] = False
         return ret
 
-    def clean_up(self):
+    async def clean_up(self):
         self.state = NodeState.READY
 
     @abstractmethod
-    def has_next_question(self) -> bool:
+    async def has_next_question(self) -> bool:
         pass
 
     @abstractmethod
-    def get_question_info(self) -> Tuple[str, str, WebElement]:
+    async def get_question_info(self) -> Tuple[str, str, Locator]:
         """
         获取当前题目的信息：题号、题目文本、题目元素
         :return: (题号, 题目文本，题目元素)
@@ -130,7 +132,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    def get_options(self) -> Dict[str, WebElement]:
+    async def get_options(self) -> Dict[str, Locator]:
         """
         获取所有选项
         返回字典：
@@ -141,7 +143,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    def choose_options(self, answers: Tuple[str, ...], options: Dict[str, WebElement]):
+    async def choose_options(self, answers: Tuple[str, ...], options: Dict[str, Locator]):
         """
         选择答案
         :param answers:  答案
@@ -151,7 +153,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    def go_next_question(self) -> Tuple[bool, str]:
+    async def go_next_question(self) -> Tuple[bool, str]:
         """
         到下一个题目
         :return: (True, "成功") or (False, [失败原因])
@@ -159,7 +161,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    def commit(self):
+    async def commit(self):
         """
         交卷
         :return:
@@ -167,7 +169,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    def handle_after_commit(self):
+    async def handle_after_commit(self):
         """
         交卷后的处理逻辑，获取成绩、或者清理工作
         考试中不允许太快交卷，可在此做逻辑等待，例如：可以间隔轮训调用commit方法
@@ -175,7 +177,7 @@ class BaseMCQExamTaskNode(BasePYNode):
         """
         pass
 
-    def get_answers(self, question_no="", question_desc="", options=[]) -> Tuple[str, ...]:
+    async def get_answers(self, question_no="", question_desc="", options=[]) -> Tuple[str, ...]:
         """
         获取答案
         :param question_no: 题目编号
@@ -185,17 +187,17 @@ class BaseMCQExamTaskNode(BasePYNode):
         """
         return self.question_bank_handler.get_answer(question_no, question_desc, options)
 
-    def finish_current_question(self) -> bool:
+    async def finish_current_question(self) -> bool:
         # 整体思路，保证软件运行正常，且不会被卡住！
         try:
             # 获取当前题目信息
-            question_no, question_desc, question_elem = self.get_question_info()
+            question_no, question_desc, question_elem = await self.get_question_info()
             if not question_desc:
                 self.logger.info("没有获取到题目，请在20秒内重新刷新页面！")
                 time.sleep(20)
                 return True
             # 获取所有选项。题目有出来，选项会一起出来，所以此处无需再次判断
-            options = self.get_options()
+            options = await self.get_options()
         except:
             self.logger.exception("获取题目或选项异常！请在30秒内手动完成当前题目！后续软件会做题继续！")
             time.sleep(30)
@@ -206,14 +208,14 @@ class BaseMCQExamTaskNode(BasePYNode):
                                       "question_elem": question_elem, "options": options}
 
         try:
-            answer = self.get_answers(question_no, question_desc, list(options.keys()))
+            answer = await self.get_answers(question_no, question_desc, list(options.keys()))
         except:
             self.logger.exception(f"【{question_desc}】获取答案异常！请在20秒内手动选择，并且点击下一题，软件会做题继续！")
             time.sleep(20)
             return True
 
         try:
-            self.choose_options(answer, options)
+            await  self.choose_options(answer, options)
             self.logger.info(f"【{question_no}.{question_desc}】选择答案：{answer}")
         except:
             self.logger.error(
@@ -222,7 +224,7 @@ class BaseMCQExamTaskNode(BasePYNode):
             return True
         return True
 
-    def record_subject(self, file_path, title, items):
+    async def record_subject(self, file_path, title, items):
         prefixes = (
             "A.", "B.", "C.", "D.", "E.", "F.", "G.", "H.", "I.", "J.", "K.", "L.", "M.", "N.", "O.", "P.", "Q.", "R.",
             "S.", "T.", "U.", "V.", "W.", "X.", "Y.", "Z.")

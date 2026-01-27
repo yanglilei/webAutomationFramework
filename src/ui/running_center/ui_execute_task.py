@@ -16,6 +16,8 @@ class FullAutomaticTaskPage(QWidget):
 
     def __init__(self):
         super().__init__()
+        # 释放资源按钮
+        self.btn_free = None
         # 全自动模式
         self.run_mode = 1
         # 开启批次运行按钮
@@ -39,12 +41,15 @@ class FullAutomaticTaskPage(QWidget):
         ##### 按钮区域 #####
         ly_buttons = QHBoxLayout()
         self.btn_start = QPushButton("开始运行")
-        self.btn_force_terminate = QPushButton("强制终止")
+        self.btn_force_terminate = QPushButton("停止任务")
+        self.btn_free = QPushButton("释放资源")
         ly_buttons.addWidget(self.btn_start)
         ly_buttons.addWidget(self.btn_force_terminate)
+        ly_buttons.addWidget(self.btn_free)
 
         self.btn_start.clicked.connect(self.on_start_clicked)
         self.btn_force_terminate.clicked.connect(self.on_force_terminate_clicked)
+        self.btn_free.clicked.connect(self.on_free_resource)
         ##### 表格区域 #####
         self.tbl_task_batch = UITaskBatch(self.run_mode)
 
@@ -57,6 +62,7 @@ class FullAutomaticTaskPage(QWidget):
         self.btn_start.setEnabled(status)
 
     def on_start_clicked(self):
+        self.btn_start.setEnabled(False)
         # 1.校验
         rows = self.tbl_task_batch.get_selected_rows()
         if not rows:
@@ -68,7 +74,7 @@ class FullAutomaticTaskPage(QWidget):
                                              finished_callback=self.on_start_task_batches)
 
     def has_running_task(self) -> bool:
-        return self.task_manager.running_status
+        return self.task_manager.is_running
 
     def start_task_batches(self, batch_ids):
         # 在线程内部执行
@@ -100,6 +106,7 @@ class FullAutomaticTaskPage(QWidget):
             return False, str(e)
 
     def on_start_task_batches(self, status, msg, payloads):
+        self.btn_start.setEnabled(True)
         LOG.debug(f"任务批次启动结果：{status}，{msg}，{payloads}")
         if status:
             if not payloads[0]:
@@ -111,7 +118,7 @@ class FullAutomaticTaskPage(QWidget):
 
     def on_force_terminate_clicked(self):
         """
-        强制终止
+        停止任务
         """
         rows = self.tbl_task_batch.get_selected_rows()
         if not rows:
@@ -124,14 +131,48 @@ class FullAutomaticTaskPage(QWidget):
             # self.task_manager.terminate_task(batch_no)
         QMessageBox.information(self, "提示", "已发送强制终止信号，请刷新任务状态！")
 
+    def on_free_resource(self):
+        """
+        释放资源
+        :return:
+        """
+        rows = self.tbl_task_batch.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择要释放的批次")
+            return
+        else:
+            val = QMessageBox.warning(self, "提示", "请确认是否要释放资源？", QMessageBox.Yes | QMessageBox.No)
+            if val != QMessageBox.Yes:
+                return
+
+            batch_nos = [row.get("batch_no") for row in rows]
+            self.async_task_executor.submit_task(self.task_manager.free_resource, batch_nos,
+                                                 finished_callback=self.on_free_resource_finished)
+
+    def on_free_resource_finished(self, status, msg, payloads):
+        """
+        释放资源完成
+        :param status:
+        :param msg:
+        :param payloads:
+        :return:
+        """
+        if status:
+            QMessageBox.information(self, "提示", payloads)
+        else:
+            QMessageBox.critical(self, "错误", f"释放资源失败：{msg}")
+
 
 class SemiAutomaticTaskPage(QWidget):
     """半自动任务页面"""
 
     def __init__(self):
         super().__init__()
+        # 释放资源按钮
+        self.btn_free = None
         # 全自动模式
         self.btn_switch_status = None
+        # 运行模式：1-全自动，2-半自动
         self.run_mode = 2
         # 开启批次运行按钮
         self.btn_startup: Optional[QPushButton] = None
@@ -154,15 +195,15 @@ class SemiAutomaticTaskPage(QWidget):
         ##### 按钮区域 #####
         ly_buttons = QHBoxLayout()
         self.btn_startup = QPushButton("启动任务")
-        # self.btn_run_monitor = QPushButton("启动监控")
         self.btn_switch_status = QPushButton("开启监控")
+        self.btn_free = QPushButton("释放资源")
         ly_buttons.addWidget(self.btn_startup)
-        # ly_buttons.addWidget(self.btn_run_monitor)
         ly_buttons.addWidget(self.btn_switch_status)
+        ly_buttons.addWidget(self.btn_free)
 
         self.btn_startup.clicked.connect(self.on_startup_clicked)
-        # self.btn_run_monitor.clicked.connect(self.on_run_monitor_clicked)
         self.btn_switch_status.clicked.connect(self.on_switch_status)
+        self.btn_free.clicked.connect(self.on_free_resource)
         self.btn_switch_status.setEnabled(False)
         ##### 表格区域 #####
         self.tbl_task_batch = UITaskBatch(self.run_mode)
@@ -199,7 +240,38 @@ class SemiAutomaticTaskPage(QWidget):
                 self.task_manager.pause_task(batch_no)
 
     def has_running_task(self) -> bool:
-        return self.task_manager.running_status
+        return self.task_manager.is_running
+
+    def on_free_resource(self):
+        """
+        释放资源
+        :return:
+        """
+        rows = self.tbl_task_batch.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择要释放的批次")
+            return
+        else:
+            val = QMessageBox.warning(self, "提示", "请确认是否要释放资源？", QMessageBox.Yes | QMessageBox.No)
+            if val != QMessageBox.Yes:
+                return
+
+            batch_nos = [row.get("batch_no") for row in rows]
+            self.async_task_executor.submit_task(self.task_manager.free_resource, batch_nos,
+                                                 finished_callback=self.on_free_resource_finished)
+
+    def on_free_resource_finished(self, status, msg, payloads):
+        """
+        释放资源完成
+        :param status:
+        :param msg:
+        :param payloads:
+        :return:
+        """
+        if status:
+            QMessageBox.information(self, "提示", payloads)
+        else:
+            QMessageBox.critical(self, "错误", f"释放资源失败：{msg}")
 
     # def on_run_monitor_clicked(self):
     #     """

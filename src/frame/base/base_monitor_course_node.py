@@ -1,8 +1,9 @@
 # ./components/monitor_course/base_monitor_course_node.py
+import asyncio
 import threading
 import time
 from abc import abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 from src.frame.base.base_task_node import BasePYNode
 from src.frame.common.constants import NodeState
@@ -21,11 +22,20 @@ class BaseMonitorCourseTaskNode(BasePYNode):
                  user_config: Tuple, logger):
         super().__init__(driver, user_manager, global_config, task_config, node_config, user_config, logger)
         # 终止标志，通过设置该标志位，可中断轮询循环
-        self.terminate_event = threading.Event()
-        # 继续标志，通过设置该标志位，可暂停轮询循环
-        # self.resume_event = threading.Event()
-        # self.resume_event.set()  # 默认不暂停
-        # 2. 轮询配置（从节点配置读取，支持子类默认值覆盖）
+        self.terminate_event = asyncio.Event()
+        # 轮询间隔（秒）
+        self.poll_interval: Optional[int] = None
+        # 最大轮询次数（-1为无限轮询）
+        self.max_poll_times: Optional[int] = None
+
+        # 已轮询次数
+        self.poll_count = 0
+        # 监控停止原因，默认为"正常退出"
+        self.stop_reason: str = "未启动"
+        # 当前课程名称
+        self.course_name: str = ""
+
+    def set_up(self):
         self.poll_interval = int(self._get_config_value(
             key="poll_interval",
             default=self._get_default_poll_interval()
@@ -35,14 +45,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
             default=self._get_default_max_poll_times()
         ))  # 最大轮询次数（-1为无限轮询）
 
-        # 已轮询次数
-        self.poll_count = 0
-        # 监控停止原因，默认为"正常退出"
-        self.stop_reason: str = "未启动"
-        # 当前课程名称
-        self.course_name: str = ""
-
-    def pause(self, reason="") -> None:
+    async def pause(self, reason="") -> None:
         if self.state == NodeState.RUNNING:
             self.logger.info(f"课程[{self.course_name}]已暂停监视！")
             self.state = NodeState.PAUSED
@@ -65,7 +68,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
             self.stop_reason = reason
             self.execute_result = not is_terminate_task
 
-    def execute(self, context: Dict) -> bool:
+    async def execute(self, context: Dict) -> bool:
         """
         完整监控流程（封装通用逻辑，子类无需修改）
         :return: 监控是否成功
@@ -76,15 +79,15 @@ class BaseMonitorCourseTaskNode(BasePYNode):
             # 1.重置节点结果
             self.reset_node_result()
             # 2.处理上一步的输出数据
-            self.handle_prev_output(self.get_prev_output())
+            await self.handle_prev_output(self.get_prev_output())
             # 3.课程环境前置校验（可选重写）
-            if not self._validate_course_env():
+            if not await self._validate_course_env():
                 self.node_result["error_msg"] = "课程环境校验失败，无法启动监控"
                 self.logger.error(self.node_result["error_msg"])
                 self.execute_result = False
                 return self.execute_result
             # 4.循环执行“当前课程完成+下一课切换”
-            self.monitor_current_course_until_finished()
+            await self.monitor_current_course_until_finished()
             # 5.监控正常退出，封装结果
             self._pack_result()
             self.logger.info(f"===== 【课程监控】正常退出：{self.stop_reason} =====")
@@ -102,7 +105,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
 
         return self.execute_result
 
-    def clean_up(self):
+    async def clean_up(self):
         # 重置中断标识
         self.terminate_event.clear()
         # 设置运行状态
@@ -114,32 +117,33 @@ class BaseMonitorCourseTaskNode(BasePYNode):
         # 监控停止原因
         self.stop_reason: str = "未启动"
 
-    def monitor_current_course_until_finished(self):
+    async def monitor_current_course_until_finished(self):
         """
         监控当前课程所有任务点，直到完成
         """
         # self.logger.info(f"开始监控课程[{self.course_name}]任务点完成状态")
         # 监控课程前置准备，如初始化变量等
-        self.prepare_before_poll_monitor_course()
+        await self.prepare_before_poll_monitor_course()
         while not self.terminate_event.is_set():
             # 出现暂停，则等待
             if self.state == NodeState.PAUSED:
-                time.sleep(1)
+                await asyncio.sleep(1)
                 continue
             # 执行单次任务点监控（如弹窗处理、进度恢复等，通用逻辑）
-            self.single_poll_monitor()
+            await self.single_poll_monitor()
             # 轮询次数限制（针对课程切换次数，可选）
             self.poll_count += 1
             if self.max_poll_times != -1 and self.poll_count >= self.max_poll_times:
                 self.stop_reason = f"达到最大课程切换次数（{self.max_poll_times}次）"
                 break
             # 轮询间隔
-            self.terminate_event.wait(timeout=self.poll_interval)
+            # await self.terminate_event.wait(timeout=self.poll_interval)
+            await asyncio.sleep(self.poll_interval)
 
         # 传递输出数据
         self.send_node_output()
 
-    def handle_prev_output(self, prev_output: Dict[str, Any]):
+    async def handle_prev_output(self, prev_output: Dict[str, Any]):
         """
         处理上一步的输出数据，子类可根据自身逻辑拓展该方法
         建议通过super().handle_prev_output(xx)来调用
@@ -157,7 +161,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
         """
         pass
 
-    def prepare_before_poll_monitor_course(self):
+    async def prepare_before_poll_monitor_course(self):
         """
         监控课程前置准备
         发生在进行循环监控课程之前
@@ -196,7 +200,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
 
     # -------------------------- 抽象方法（子类必须实现） --------------------------
     # @abstractmethod
-    # def _get_target_course_id(self) -> Optional[str]:
+    # async def _get_target_course_id(self) -> Optional[str]:
     #     """
     #     获取目标课程ID（子类必须实现，支持自定义获取逻辑）
     #     :return: 目标课程ID / None（获取失败）
@@ -204,14 +208,14 @@ class BaseMonitorCourseTaskNode(BasePYNode):
     #     pass
 
     @abstractmethod
-    def single_poll_monitor(self):
+    async def single_poll_monitor(self):
         """
         单次轮询监控核心逻辑（子类必须实现，如状态检查、弹窗处理等）
         """
         pass
 
     # @abstractmethod
-    # def _is_all_done(self) -> bool:
+    # async def _is_all_done(self) -> bool:
     #     """
     #     判断课程是否都结束了
     #     :return:
@@ -233,7 +237,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
         """
         return -1
 
-    def _validate_course_env(self) -> bool:
+    async def _validate_course_env(self) -> bool:
         """
         课程环境前置校验（子类可重写，默认返回True）
         :return: 环境是否有效

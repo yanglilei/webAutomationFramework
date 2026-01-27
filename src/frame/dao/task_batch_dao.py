@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS tb_task_batch (
     queue_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 加入批次队列的时间
     execute_status INTEGER NOT NULL DEFAULT 0,  -- 批次状态：0-待运行 1-运行中 2-已结束 3-已取消
     run_mode INTEGER NOT NULL DEFAULT 1,  -- 批次状态：1-全自动 2-半自动
-    user_mode INTEGER NOT NULL DEFAULT 1,  -- 批次状态：0-无用户 1-表格 2-文本
+    user_mode INTEGER NOT NULL DEFAULT 1,  -- 用户模式：0-无用户 1-表格 2-文本
+    global_config Text,  -- 全局配置
     batch_no VARCHAR(50) NOT NULL UNIQUE,  -- 唯一批次号（如B20260111001）
     action_id INTEGER,  -- 动作ID，用于标识是不是同时运行的，非常重要
     total_user INTEGER,  -- 该批次总用户数
@@ -46,14 +47,14 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             raise BusinessException("该任务批次已存在！")
 
         sql = """INSERT INTO tb_task_batch (task_tmpl_id, task_tmpl_name, business_type, project_id, project_name, user_info, priority, 
-        queue_time, execute_status, user_mode, run_mode, batch_no, total_user, success_user, fail_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        queue_time, execute_status, user_mode, run_mode, batch_no, global_config, total_user, success_user, fail_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         params = (task_batch.get("task_tmpl_id"), task_batch.get("task_tmpl_name"),
                   task_batch.get("business_type"),
                   task_batch.get("project_id"), task_batch.get("project_name"),
                   task_batch.get("user_info"),
                   task_batch.get("priority"), task_batch.get("queue_time"), task_batch.get("execute_status"),
                   task_batch.get("user_mode"), task_batch.get("run_mode"),
-                  task_batch.get("batch_no"), task_batch.get("total_user"),
+                  task_batch.get("batch_no"), task_batch.get("global_config"), task_batch.get("total_user"),
                   task_batch.get("success_user"), task_batch.get("fail_user"))
         with self.get_db_connection() as conn:
             cursor = conn.cursor()
@@ -62,7 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
 
     def batch_add(self, task_batches: List[Dict[str, Any]]):
         sql = """INSERT INTO tb_task_batch (task_tmpl_id, task_tmpl_name, business_type, project_id, project_name, user_info, priority, 
-        queue_time, execute_status, user_mode, run_mode, batch_no, total_user, success_user, fail_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        queue_time, execute_status, user_mode, run_mode, batch_no, global_config, total_user, success_user, fail_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         data_tuples = []
         for task_batch in task_batches:
             data_tuple = (task_batch.get("task_tmpl_id"), task_batch.get("task_tmpl_name"),
@@ -70,7 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
                           task_batch.get("user_info"),
                           task_batch.get("priority"), task_batch.get("queue_time"), task_batch.get("execute_status"),
                           task_batch.get("user_mode"), task_batch.get("run_mode"),
-                          task_batch.get("batch_no"), task_batch.get("total_user"),
+                          task_batch.get("batch_no"), task_batch.get("global_config"), task_batch.get("total_user"),
                           task_batch.get("success_user"), task_batch.get("fail_user"))
             data_tuples.append(data_tuple)
 
@@ -84,7 +85,19 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             row_ = self.dict_from_row(row)
             if row_:
                 row_["user_info"] = self.json_deserialize(row_["user_info"])
+                row_["global_config"] = self.json_deserialize(row_["global_config"])
         return row_
+
+    def get_by_batch_nos(self, batch_nos: List[str]) -> List[Dict[str, Any]]:
+        """根据批次号列表批量获取记录"""
+        sql = "SELECT * FROM tb_task_batch WHERE batch_no IN ({})".format(", ".join(["?"] * len(batch_nos)))
+        with self.get_db_connection() as conn:
+            rows = conn.execute(sql, batch_nos).fetchall()
+            rows_ = [self.dict_from_row(row) for row in rows]
+            for row in rows_:
+                row["user_info"] = self.json_deserialize(row["user_info"])
+                row["global_config"] = self.json_deserialize(row["global_config"])
+        return rows_
 
     def get_by_id(self, batch_id: str) -> Optional[Dict[str, Any]]:
         """根据主键ID获取记录"""
@@ -94,6 +107,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             row_ = self.dict_from_row(row)
             if row_:
                 row_["user_info"] = self.json_deserialize(row_["user_info"])
+                row_["global_config"] = self.json_deserialize(row_["global_config"])
         return row_
 
     def get_by_ids(self, batch_ids: List[str]) -> List[Dict[str, Any]]:
@@ -104,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             rows_ = [self.dict_from_row(row) for row in rows]
             for row in rows_:
                 row["user_info"] = self.json_deserialize(row["user_info"])
+                row["global_config"] = self.json_deserialize(row["global_config"])
         return rows_
 
     def delete_one(self, batch_id: int) -> bool:
@@ -323,6 +338,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             rows_ = [self.dict_from_row(row) for row in rows]
             for row in rows_:
                 row["user_info"] = self.json_deserialize(row["user_info"])
+                row["global_config"] = self.json_deserialize(row["global_config"])
             return rows_
 
     def delete_by_ids(self, batch_ids: List[int]):

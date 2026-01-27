@@ -13,6 +13,7 @@ components_deps/
 data/
 logs/
 tmp/
+user_data/
 
 # Distribution / packaging
 .Python

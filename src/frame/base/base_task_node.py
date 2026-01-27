@@ -4,7 +4,7 @@ import os
 from abc import ABC, abstractmethod, ABCMeta
 from typing import Dict, Any, Tuple, Optional, Callable
 
-from src.frame.base.base_web_operator import SeleniumWebOperator
+from src.frame.base.playwright_web_operator import PlaywrightWebOperator
 from src.frame.common.constants import NodeState, ControlCommand
 from src.utils import basic
 
@@ -45,9 +45,10 @@ class BaseNode(ABC):
         # 注册所有支持的控制命令（与ControlCommand枚举对应）
         self._auto_register_standard_commands()  # 注册内置控制命令
         self.execute_result = True  # execute返回值
+        self.user_mode = self.task_config.get("batch_info", {}).get("user_mode")  # 用户模式。0-无用户 1-表格 2-文本
 
     @abstractmethod
-    def execute(self, context: Dict) -> bool:
+    async def execute(self, context: Dict) -> bool:
         """
         TODO 退出返回的参数需要丰富！不能仅仅是bool，否则外部容易搞懵逼！
         TODO pause by zcy 20250115!
@@ -131,7 +132,7 @@ class BaseNode(ABC):
     # def execute_command(self, cmd_name: ControlCommand, /, *args, **kwargs) -> bool:
     #     """
     #     执行注册的命令（调度器调用入口）
-    #     :param cmd_name: 指令名称。查看src.frame.common.constants.ControlCommand的指令内容
+    #     :param cmd_name: 指令名称。查看src.iframe.common.constants.ControlCommand的指令内容
     #     :param args:
     #     :param kwargs:
     #     :return: bool True-执行成功；False-执行事变
@@ -150,7 +151,7 @@ class BaseNode(ABC):
     def has_registered_command(self, cmd_name: str) -> bool:
         """
         判断是否注册了指定命令
-        :param cmd_name: 指令名称。查看src.frame.common.constants.ControlCommand的指令内容
+        :param cmd_name: 指令名称。查看src.iframe.common.constants.ControlCommand的指令内容
         :return : bool True-已注册指令；False-未注册
         """
         return cmd_name in self.command_registry
@@ -171,7 +172,7 @@ class BaseNode(ABC):
         prev_node = self.get_prev_node()
         return prev_node.node_result.get("output_data") if prev_node else {}
 
-    def clean_up(self):
+    async def clean_up(self):
         """
         节点执行后的清理工作（可选实现）
         执行execute完毕后，框架会再次调用该方法执行清除的工作！
@@ -188,7 +189,7 @@ class BaseNode(ABC):
         """设置节点输出数据（供后续节点使用）"""
         self.node_result["output_data"][key] = value
 
-    def validate_session(self) -> bool:
+    async def validate_session(self) -> bool:
         """
         TODO 目前暂时无需用到
         会话有效性校验（可选实现，默认返回True）
@@ -216,12 +217,12 @@ class BaseNode(ABC):
         }
 
 
-class BasePYNode(BaseNode, SeleniumWebOperator, metaclass=ABCMeta):
+class BasePYNode(BaseNode, PlaywrightWebOperator, metaclass=ABCMeta):
     """统一任务节点组件接口（所有组件均需实现该接口）"""
 
     def __init__(self, driver, user_manager, global_config: Dict, task_config: Dict, node_config: Dict,
                  user_config: Tuple, logger):
-        SeleniumWebOperator.__init__(self, driver)
+        PlaywrightWebOperator.__init__(self, driver)
         BaseNode.__init__(self, user_manager, global_config, task_config, node_config, user_config, logger)
         self.username = self.user_config[0]  # 用户名
         self.password = self.user_config[1]  # 密码
@@ -236,7 +237,7 @@ class BasePYNode(BaseNode, SeleniumWebOperator, metaclass=ABCMeta):
         pass
 
 
-class JSNode(BaseNode, SeleniumWebOperator):
+class JSNode(BaseNode, PlaywrightWebOperator):
     """
     JS节点
     利用selenium执行的js代码如下：
@@ -275,15 +276,15 @@ class JSNode(BaseNode, SeleniumWebOperator):
 
     def __init__(self, driver, user_manager, js_component_path: str, global_config: Dict,
                  task_config: Dict, node_config: Dict, user_config: Tuple, logger):
-        SeleniumWebOperator.__init__(self, driver)
+        PlaywrightWebOperator.__init__(self, driver)
         BaseNode.__init__(self, user_manager, global_config, task_config, node_config, user_config, logger)
         self.js_component_path = js_component_path
 
-    def execute(self, context: Dict) -> bool:
-        node_result = self._execute_js_node()
+    async def execute(self, context: Dict) -> bool:
+        node_result = await self._execute_js_node()
         return node_result["is_success"]
 
-    def _execute_js_node(self) -> Dict:
+    async def _execute_js_node(self) -> Dict:
         """通过Selenium执行JS任务节点"""
         self.logger.info(f"开始执行JS节点：{os.path.basename(self.js_component_path)}")
         node_result = {
@@ -317,7 +318,7 @@ class JSNode(BaseNode, SeleniumWebOperator):
                 return executeTaskNode(params);
             """
             # 执行JS并获取结果
-            js_node_result = self.execute_js(js_exec_code)
+            js_node_result = await self.execute_js(js_exec_code)
 
             # 4. 解析JS执行结果
             node_result["is_success"] = js_node_result.get("is_success", False)

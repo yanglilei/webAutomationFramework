@@ -40,6 +40,7 @@ class UITaskBatch(BaseTableWidget):
             TableHeader('用户模式', 'user_mode'),
             TableHeader('加入批次时间', 'queue_time'),
             TableHeader('用户列表', 'user_info'),
+            TableHeader('全局参数', 'global_config'),
             TableHeader('优先级', 'priority'),
             TableHeader('总用户数', 'total_user'),
             TableHeader('成功用户数', 'success_user'),
@@ -143,6 +144,7 @@ class UITaskBatch(BaseTableWidget):
                                                     [(value, key) for key, value in
                                                               self.execute_status_mapping.items()]),
                     "user_info": EditableField("user_info", "textedit"),
+                    "global_config": EditableField("global_config", "textedit"),
                     "queue_time": EditableField("queue_time", "label"),
                     "batch_no": EditableField("batch_no", "label"),
                     "total_user": EditableField("total_user", "label"),
@@ -176,6 +178,7 @@ class UITaskBatch(BaseTableWidget):
                                             [(value, key) for key, value in
                                              self.execute_status_mapping.items()], visible=False),
             "user_info": EditableField("user_info", "textedit"),
+            "global_config": EditableField("global_config", "textedit"),
             "queue_time": EditableField("queue_time", visible=False),
             "batch_no": EditableField("batch_no", visible=False),
             "total_user": EditableField("total_user", visible=False),

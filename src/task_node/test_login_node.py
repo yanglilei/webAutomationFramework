@@ -45,7 +45,7 @@ class TestLoginNode(BasePYNode):
                     "login_time": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "login_url": login_url,
                     "current_url": self.get_current_url(self.get_latest_window()),
-                    "username": self.user_config.get("username"),
+                    "username": self.user_config[0],
                     "is_task_relogin": is_task_relogin
                 }
                 self.logger.info(f"{login_log_prefix}执行成功（共重试{retry_idx-1}次）")

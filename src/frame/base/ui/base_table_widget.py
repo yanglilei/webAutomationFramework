@@ -25,6 +25,7 @@ from src.frame.common.sys_config import SysConfig
 from src.frame.common.ui import ShadowButton
 from src.frame.dao.async_db_task_scheduler import AsyncTaskScheduler
 from src.ui.ui_cell_content_dialog import CellContentDialog
+from src.ui.ui_loading_message_box import LoadingWidget
 
 
 # class BulkImportWorker(QThread):
@@ -492,9 +493,9 @@ class BaseTableWidget(QWidget):
     def show_add_dialog(self):
         """重构后的新增方法：先请求最新元数据，再渲染弹窗"""
         # 1. 显示加载提示
-        self.add_loading_dialog = QProgressDialog("正在加载最新数据...", "取消", 0, 0, self)
-        self.add_loading_dialog.setWindowModality(Qt.WindowModal)
-        self.add_loading_dialog.show()
+        # self.add_loading_dialog = QProgressDialog("正在加载最新数据...", "取消", 0, 0, self)
+        # self.add_loading_dialog.setWindowModality(Qt.WindowModal)
+        # self.add_loading_dialog.show()
 
         # 2. 异步请求最新的新增元数据
         self.async_task_scheduler.submit_task(
@@ -505,8 +506,8 @@ class BaseTableWidget(QWidget):
     def on_add_metadata_loaded(self, status: bool, msg: str, metadata: dict):
         """新增元数据加载完成后的回调"""
         # 关闭加载提示
-        if self.add_loading_dialog and self.add_loading_dialog.isVisible():
-            self.add_loading_dialog.close()
+        # if self.add_loading_dialog and self.add_loading_dialog.isVisible():
+        #     self.add_loading_dialog.close()
 
         if not status:
             QMessageBox.warning(self, "错误", f"加载最新数据失败：{msg}")
@@ -1507,9 +1508,9 @@ class BaseTableWidget(QWidget):
             return
 
         # 2. 显示加载提示
-        self.edit_loading_dialog = QProgressDialog("正在加载最新数据...", "取消", 0, 0, self)
-        self.edit_loading_dialog.setWindowModality(Qt.WindowModal)
-        self.edit_loading_dialog.show()
+        # self.edit_loading_dialog = QProgressDialog("正在加载最新数据...", "取消", 0, 0, self)
+        # self.edit_loading_dialog.setWindowModality(Qt.WindowModal)
+        # self.edit_loading_dialog.show()
 
         # 3. 异步请求最新的编辑元数据（如下拉选项）
         self.async_task_scheduler.submit_task(
@@ -1520,8 +1521,9 @@ class BaseTableWidget(QWidget):
     def on_edit_metadata_loaded(self, status: bool, msg: str, metadata: dict):
         """编辑元数据加载完成后的回调"""
         # 关闭加载提示
-        if self.edit_loading_dialog and self.edit_loading_dialog.isVisible():
-            self.edit_loading_dialog.close()
+        # if self.edit_loading_dialog and self.edit_loading_dialog.isVisible():
+        #     self.edit_loading_dialog.close()
+        #     self.edit_loading_dialog = None
 
         if not status:
             QMessageBox.warning(self, "错误", f"加载最新数据失败：{msg}")
@@ -1536,7 +1538,7 @@ class BaseTableWidget(QWidget):
         self.edit_dialog = QDialog(self)
         self.edit_dialog.setWindowTitle("编辑记录")
         self.edit_dialog.setMinimumWidth(300)
-        layout = QVBoxLayout(self.edit_dialog)
+        layout = QVBoxLayout()
         # 表单布局
         form_layout = QFormLayout()
         # 第一列为ID列
@@ -1579,6 +1581,7 @@ class BaseTableWidget(QWidget):
 
         layout.addLayout(form_layout)
         layout.addLayout(button_layout)
+        self.edit_dialog.setLayout(layout)
         self.edit_dialog.exec_()
 
     def _create_edit_widget_with_metadata(self, field_name: str, value: str, metadata: dict) -> Optional[EditableField]:

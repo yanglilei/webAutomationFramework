@@ -21,7 +21,6 @@ def get_child_processes(parent_pid, child_processes: List[psutil.Process]):
             child_processes.append(process)
             get_child_processes(process.pid, child_processes)
 
-
 def get_processes_by_name(process_name):
     ret = list()
     process_iter = psutil.process_iter()

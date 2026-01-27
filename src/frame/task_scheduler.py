@@ -8,7 +8,7 @@ from src.frame.hot_reload_manager import NodeHotReloadManager
 from src.frame.task import Task
 
 
-@singleton
+# @singleton
 class TaskScheduler:
     """任务调度器核心类"""
     _lock = threading.Lock()
@@ -26,19 +26,20 @@ class TaskScheduler:
                 self.logger.info(f"[调度器] 任务已存在：{task.task_uuid}")
                 return False
             self.tasks[task.task_uuid] = task
-            for node in task.nodes.values():
-                node_cfg = node.node_config
-                if node_cfg.get("node_params", {}).get("is_support_hot_reload"):
-                    # 添加到热加载节点列表
-                    # self.support_hot_reload_nodes.append(node_instance)
-                    # 在create_node_instance方法中component_path被修改了，所以这里需要重新获取
-                    component_path = node_cfg.get("component_path")
-                    # 需要热加载的组件，添加到看门狗.
-                    self.hot_reload_manager.watch_node_file(
-                        node_identifier=node_cfg.get("node_id"),
-                        node_file_path=component_path,
-                        reload_callback=self._task_reload_callback
-                    )
+            # TODO 在TaskBatchExecutor中实现！pause by zcy! 20260127!
+            # for node in task.nodes.values():
+            #     node_cfg = node.node_config
+            #     if node_cfg.get("node_params", {}).get("is_support_hot_reload"):
+            #         # 添加到热加载节点列表
+            #         # self.support_hot_reload_nodes.append(node_instance)
+            #         # 在create_node_instance方法中component_path被修改了，所以这里需要重新获取
+            #         component_path = node_cfg.get("component_path")
+            #         # 需要热加载的组件，添加到看门狗.
+            #         self.hot_reload_manager.watch_node_file(
+            #             node_identifier=node_cfg.get("node_id"),
+            #             node_file_path=component_path,
+            #             reload_callback=self._task_reload_callback
+            #         )
 
         self.logger.info(f"[调度器] 任务提交成功：{task.task_uuid}")
         return True
@@ -51,18 +52,21 @@ class TaskScheduler:
             task.hot_reload(component_path)
         self.logger.info(f"结束热更新，组件路径：{component_path}")
 
-    def start_task(self, task_uuid: str) -> bool:
+    async def start_task(self, task_uuid: str) -> bool:
         """启动任务（异步执行，不阻塞主线程）"""
         if task_uuid not in self.tasks:
             self.logger.info(f"[调度器] 启动失败，任务不存在：{task_uuid}")
             return False
-        return self.tasks[task_uuid].run()
+        return await self.tasks[task_uuid].run()
 
-    def remove_task(self, task_uuid: str):
+    def remove_task(self, task: Task):
         """移除任务"""
-        if task_uuid in self.tasks:
-            self.tasks.pop(task_uuid)
-            self.logger.info(f"[调度器] 移除任务成功：{task_uuid}")
+        if not task:
+            return
+
+        if task.task_uuid in self.tasks:
+            self.tasks.pop(task.task_uuid)
+            self.logger.info(f"[调度器] 移除任务成功：{task.task_uuid}")
 
     def get_target_node(self, task_uuid: str, node_id: Optional[int] = None) -> Optional[BaseNode]:
         """寻址目标节点（核心方法）：支持任务级/节点级寻址"""

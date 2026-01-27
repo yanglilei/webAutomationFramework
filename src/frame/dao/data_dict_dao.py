@@ -22,7 +22,7 @@ class DataDictDAO(BaseDB):
         );"""
         return sql.strip()
 
-    def add_one(self, data_dict_info: Dict[str, Any]) -> bool | None:
+    def add_one(self, data_dict_info: Dict[str, Any]) -> int | None:
         sql = """INSERT INTO tb_data_dict (key, value, name, remark) VALUES (?, ?, ?, ?)"""
         params = (
         data_dict_info["key"], data_dict_info["value"], data_dict_info["name"], data_dict_info.get("remark", None))

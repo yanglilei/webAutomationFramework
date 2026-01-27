@@ -3,7 +3,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Dict, Optional, List, Tuple
+from typing import Optional, List, Tuple
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QGridLayout, QWidget, QLineEdit, QPushButton, \
@@ -209,6 +209,13 @@ class AutoModePage(BaseTabWidget):
         # user_info_location = UserInfoLocation(xlsx_path, sheet_name, username_start_cell, username_end_cell,
         #                                       password_start_cell, password_end_cell)
 
+        datas = self.db.data_dict_dao.get_all()
+        global_config = json.dumps({data.get("key"): data.get("value") for data in datas}, ensure_ascii=False)
+        user_info = json.dumps({"workbook_addr": xlsx_path, "sheet_name": sheet_name,
+                                "username_start_cell": username_start_cell,
+                                "username_end_cell": username_end_cell,
+                                "password_start_cell": password_start_cell,
+                                "password_end_cell": password_end_cell}, ensure_ascii=False)
         records = []
         for row in self.ui_task_tmpl.get_selected_rows():
             # 如tb_task_batch表
@@ -223,11 +230,8 @@ class AutoModePage(BaseTabWidget):
                       "project_name": project.get("name"),
                       "run_mode": 1,
                       "user_mode": 1,
-                      "user_info": json.dumps({"workbook_addr": xlsx_path, "sheet_name": sheet_name,
-                                               "username_start_cell": username_start_cell,
-                                               "username_end_cell": username_end_cell,
-                                               "password_start_cell": password_start_cell,
-                                               "password_end_cell": password_end_cell}, ensure_ascii=False),
+                      "global_config": global_config,
+                      "user_info": user_info,
                       "priority": 5,  # 默认值为5
                       "queue_time": datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S"),
                       "execute_status": 0,

@@ -1,11 +1,20 @@
+import asyncio
 import atexit
+import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
-# sys.coinit_flags = 2
-from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer
+from src.frame.common.chrome_process_manager import chrome_process_manager
+from src.frame.common.playwright_driver_manager import WebDriverManager
+from src.frame.task_manager import TaskManager
+from src.utils.async_utils import get_event_loop_safely
+from src.utils.process_utils import ProcessUtils
+
+sys.coinit_flags = 2
+from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer, QThread, pyqtSlot, QObject
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QListWidget, QStackedWidget,
@@ -65,12 +74,14 @@ class RunningCenterPage(BasePage):
         self.setLayout(ly_main)
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.refresh_data)
+        self.timer.timeout.connect(self.refresh_running_status)
         self.timer.start(1000)
 
-    def refresh_data(self):
-        self.running_status_refresh_signal.emit(self.running_center_widget.has_running_task())
+    def refresh_running_status(self):
+        self.running_status_refresh_signal.emit(self.has_running_task())
 
+    def has_running_task(self):
+        return self.running_center_widget.has_running_task()
 
 class ActivationPage(BasePage):
     """3. 激活页面"""
@@ -225,6 +236,27 @@ class ActivationPage(BasePage):
         # 弹出消息框提示复制成功
         QMessageBox.information(self, '信息', '文本已复制到剪贴板', QMessageBox.Ok)
 
+# 创建一个资源监控线程
+class ResourceMonitor(QThread):
+    """资源监控线程"""
+    signal = pyqtSignal(bool)
+
+    def __init__(self, logger, ui_running_center: 'RunningCenterPage'):
+        super().__init__()
+        self.logger = logger
+        self.ui_running_center = ui_running_center
+
+    def run(self):
+        while True:
+            self.free_resource(self.ui_running_center.has_running_task())
+            time.sleep(5)
+
+    def free_resource(self, status: bool):
+        if not status:
+            ProcessUtils.kill_residual_chrome(os.getpid())
+            # chrome_process_manager.clean_all_batch_processes()
+            self.logger.debug("已释放浏览器资源")
+
 
 # ======================== 主窗口（核心布局） ========================
 class MainWindow(QMainWindow):
@@ -242,15 +274,15 @@ class MainWindow(QMainWindow):
         self.version = constants.VERSION
         self.activation_page = None  # 激活页面
         self.config_center_page = None  # 配置配置页面
-        self.running_center_page = None  # 运行中心页面
+        self.running_center_page: Optional[RunningCenterPage] = None  # 运行中心页面
         self.nav_widget = None  # 右侧堆叠窗口
         self.stacked_widget = None  # 左侧导航栏
         self.setWindowTitle(f"{self.app_name}V{self.version}")
         self.setGeometry(100, 100, 1000, 700)  # 初始窗口大小
-        self.setMinimumSize(1200, 600)  # 最小窗口尺寸，避免缩放过小
-        # 初始化UI
-        self.init_ui()
-        # 连接运行状态信号到槽函数
+        self.setMinimumSize(1200, 680)  # 最小窗口尺寸，避免缩放过小
+        self.init_ui()  # 初始化UI
+        # self.resource_monitor = ResourceMonitor(LOG, self.running_center_page)
+        # self.resource_monitor.start()
 
     def init_ui(self):
         # 1. 创建中心部件和主布局（水平布局：左导航 + 右内容）
@@ -505,6 +537,7 @@ class MainWindow(QMainWindow):
         self.config_center_page = ConfigCenterPage()
         self.running_center_page = RunningCenterPage()
         self.running_center_page.running_status_refresh_signal.connect(self.update_running_indicator)
+        # self.running_center_page.running_status_refresh_signal.connect(self.resource_monitor.free_resource)
 
         self.activation_page = ActivationPage()
         self.activation_page.activation_status_changed.connect(self.on_activation_status_changed)
