@@ -1,20 +1,15 @@
-import asyncio
 import atexit
 import os
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
-from src.frame.common.chrome_process_manager import chrome_process_manager
-from src.frame.common.playwright_driver_manager import WebDriverManager
-from src.frame.task_manager import TaskManager
-from src.utils.async_utils import get_event_loop_safely
 from src.utils.process_utils import ProcessUtils
 
 sys.coinit_flags = 2
-from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer, QThread, pyqtSlot, QObject
+from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer, QThread
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QListWidget, QStackedWidget,
@@ -82,6 +77,7 @@ class RunningCenterPage(BasePage):
 
     def has_running_task(self):
         return self.running_center_widget.has_running_task()
+
 
 class ActivationPage(BasePage):
     """3. 激活页面"""
@@ -235,6 +231,7 @@ class ActivationPage(BasePage):
         clipboard.setText(self.lb_mac.text())
         # 弹出消息框提示复制成功
         QMessageBox.information(self, '信息', '文本已复制到剪贴板', QMessageBox.Ok)
+
 
 # 创建一个资源监控线程
 class ResourceMonitor(QThread):

@@ -25,7 +25,6 @@ from src.frame.common.sys_config import SysConfig
 from src.frame.common.ui import ShadowButton
 from src.frame.dao.async_db_task_scheduler import AsyncTaskScheduler
 from src.ui.ui_cell_content_dialog import CellContentDialog
-from src.ui.ui_loading_message_box import LoadingWidget
 
 
 # class BulkImportWorker(QThread):

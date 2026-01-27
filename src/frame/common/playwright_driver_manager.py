@@ -8,8 +8,8 @@ from typing import Dict, Optional, Any, Tuple
 import psutil
 from playwright.async_api import BrowserContext
 from playwright.async_api import async_playwright, Browser
-from playwright_stealth import Stealth
 
+from src.frame.common.playwright_stealth.stealth import Stealth
 from src.frame.dto.driver_config import DriverConfig
 from src.utils import basic
 from src.utils.sys_path_utils import SysPathUtils

@@ -8,7 +8,7 @@ from typing import Tuple
 from src.frame.base.base_login_node import BaseLoginTaskNode
 from src.frame.common.qt_log_redirector import LOG
 from src.utils import basic
-from src.utils.ocr_utils import DdddOcr
+from src.utils.ocr_utils import MyDdddOcr
 
 
 @dataclass(init=False)
@@ -94,7 +94,7 @@ class HXJYWLoginTaskNode(BaseLoginTaskNode):
                 verify_code_input = await self.get_elem_with_wait_by_xpath(10, verify_code_input_xpath)
                 # 提取图片中的验证码
                 try:
-                    code = DdddOcr.extract_verify_code_from_bytes(self.screenshot(element=captcha_img_elem))
+                    code = MyDdddOcr.extract_verify_code_from_bytes(self.screenshot(element=captcha_img_elem))
                 except:
                     LOG.error("用户【%s】提取图片中的验证码失败，重试提取.." % self.username_showed)
                     await asyncio.sleep(1)

@@ -1,10 +1,8 @@
 from typing import List
 
-from pywinauto import Desktop
 from tenacity import retry, retry_if_result, wait_fixed, stop_after_attempt, RetryError
 import sys
-
-from src.common.qt_log_redirector import LOG
+import logging
 
 sys.coinit_flags = 2
 
@@ -16,6 +14,7 @@ class UploadLocalFile:
     """
     def __init__(self):
         # 桌面对象，目的：获取文件选择器对话框
+        from pywinauto import Desktop
         self.desktop = Desktop()
 
     def select_file(self, image_path: str):
@@ -37,11 +36,11 @@ class UploadLocalFile:
         try:
             _, dialog = self._get_open_file_dialog()
         except RetryError:
-            LOG.error("获取打开文件对话框失败，等待人工介入处理...")
+            logging.error("获取打开文件对话框失败，等待人工介入处理...")
             try:
                 _, dialog = self._wait_for_manual_click_upload_file_btn()
             except RetryError:
-                LOG.error("等待许久未收到人工处理的信号")
+                logging.error("等待许久未收到人工处理的信号")
         return dialog
 
     @retry(stop=stop_after_attempt(10), wait=wait_fixed(1), retry=retry_if_result(lambda value: value[0] is False))
@@ -53,7 +52,7 @@ class UploadLocalFile:
     def _wait_for_manual_click_upload_file_btn(self):
         dialog = self.desktop.window(title="打开")
         if not dialog.exists():
-            LOG.warning("等待手动打开上传文件对话框...")
+            logging.warning("等待手动打开上传文件对话框...")
             raise Exception()
         else:
             return dialog.exists(), dialog

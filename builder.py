@@ -51,7 +51,7 @@ class PyInstallerBuilder:
 
         # 设置标准输出编码为 UTF-8
         # sys.stdout.reconfigure(encoding='utf-8')
-        cmd_segs = ["conda", "activate", conda_env, "&" if cls._is_windows() else '&&', "pyinstaller", '--onefile',
+        cmd_segs = ["conda", "activate", conda_env, "&" if cls._is_windows() else '&&', "pyinstaller", '--onefile', '--clean', '-y',
                     '-w', f'-n={name}']
         if icon:
             # cmd_segs.append(f'--icon={os.path.join(current_dir, icon)}')
@@ -175,8 +175,13 @@ class XGSBuilder(PyInstallerBuilder):
 
     ADD_DATAS = [(".\\xgs.ico", ""),
                  (".\\conf\\public_key.pem", "conf"),
-                 (".\\conf\\chromedriver.exe", "conf"),
-                 (".\\Chrome", "Chrome")]
+                 # (".\\conf\\chromedriver.exe", "conf"),
+                 (".\\conf\\playwright_stealth_js", "conf\\playwright_stealth_js"),
+                 (".\\Chrome", "Chrome"),
+                 # (r"c:\users\lovel\.conda\envs\web_automation_framework\Lib\site-packages\onnxruntime\capi\onnxruntime_providers_shared.dll", r".\onnxruntime\capi"),
+                 # (r"c:\users\lovel\.conda\envs\web_automation_framework\Lib\site-packages\ddddocr\common_old.onnx", r".\ddddocr"),
+                 # (r"c:\users\lovel\.conda\envs\web_automation_framework\Lib\site-packages\ddddocr\common.onnx", r".\ddddocr")
+                 ]
 
     CONDA_ENV = 'web_automation_framework'
     ENTER_FILE = '.\\src\\ui\\ui_main_window.py'
@@ -251,7 +256,7 @@ def build_xgs():
     :return:
     """
     # 打包时要替换的参数（可根据需要修改）
-    XGSBuilder.TARGET_VERSION = "1.0.1"  # 替换后的版本号
+    XGSBuilder.TARGET_VERSION = "1.0.2"  # 替换后的版本号
     XGSBuilder.TARGET_IS_ACTIVATION = False  # 替换后的激活状态
     XGSBuilder.do_build()  # 打包
 

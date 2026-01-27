@@ -1,8 +1,7 @@
 import asyncio
-import uuid
-from asyncio import TaskGroup, Task
-from typing import Coroutine, List, Optional, Dict, Any, Callable, Tuple
 import logging
+from asyncio import Task
+from typing import Coroutine, List, Optional, Dict, Any, Callable, Tuple
 
 from shortuuid import ShortUUID
 
@@ -158,7 +157,7 @@ class CoroutineScheduler:
                         self._trigger_callbacks(task_id, "failed", None, e)
 
                 # 关键：用TaskGroup创建任务（自动加入管控）
-                task  = tg.create_task(_task_wrapper(task_id, func, args, kwargs))
+                task = tg.create_task(_task_wrapper(task_id, func, args, kwargs))
                 # 任务列表
                 self._tasks.append(task)
                 # 间隔（最后一个任务无需间隔）

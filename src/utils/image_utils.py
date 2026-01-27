@@ -1,7 +1,8 @@
 import base64
 import os
-import numpy as np
+
 import cv2
+import numpy as np
 
 
 def base64_to_image(base64_str, save_path):
@@ -69,6 +70,7 @@ def cv2_imread(file_path, flags=cv2.IMREAD_COLOR):
     except Exception as e:
         print(f"读取图片失败：{e}")
         return None
+
 
 # 配套：支持中文路径的保存函数（可选）
 def cv2_imwrite(file_path, img):
@@ -163,6 +165,7 @@ def auto_crop_image(input_path, output_path=None, background_threshold=30):
         print(f"裁剪失败：{str(e)}")
         return False
 
+
 def crop_image(input_path, output_path, x1, y1, x2=None, y2=None):
     """
     裁剪图片指定区域（支持x2、y2默认使用图片右下角坐标）
@@ -211,27 +214,3 @@ def crop_image(input_path, output_path, x1, y1, x2=None, y2=None):
         raise IOError(f"保存图片失败，请检查输出路径：{output_path}")
 
     print(f"裁剪成功！已保存至：{output_path}（裁剪区域：({x1},{y1}) 至 ({x2},{y2})）")
-
-
-# 使用示例
-if __name__ == "__main__":
-    try:
-        # 示例1：只指定左上角坐标，默认裁剪到图片右下角
-        crop_image(
-            input_path=r"D:\PycharmProjects\learnRobotV2\dist\安溪继续教育考试助手V1.0.0\tmp\350524196708056516_slider_bg_img.png",
-            output_path=r"D:\PycharmProjects\learnRobotV2\dist\安溪继续教育考试助手V1.0.0\tmp\350524196708056516_slider_bg_img2.png",
-            x1=56   ,  # 左上角x
-            y1=0  # 左上角y（x2和y2不填，默认用图片右下角）
-        )
-
-        # # 示例2：指定完整坐标（与原功能一致）
-        # crop_image(
-        #     input_path="input.jpg",
-        #     output_path="cropped_full.jpg",
-        #     x1=50,
-        #     y1=50,
-        #     x2=300,
-        #     y2=200
-        # )
-    except Exception as e:
-        print(f"出错：{e}")

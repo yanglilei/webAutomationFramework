@@ -1,6 +1,5 @@
 from configparser import RawConfigParser
 from pathlib import Path
-from typing import List
 
 
 def search_config_file(cur_dir: Path, config_file_parent_dir, config_file_name, recursive_count=8) -> Path:
@@ -9,6 +8,7 @@ def search_config_file(cur_dir: Path, config_file_parent_dir, config_file_name, 
         recursive_count -= 1
         cur_dir = cur_dir.parent
     return cur_dir / config_file_parent_dir / config_file_name
+
 
 class ConfigFileReader:
     base_section_name = "Base"  # 基本配置分段名称
@@ -37,4 +37,3 @@ class ConfigFileReader:
     @staticmethod
     def get_options(section_name):
         return ConfigFileReader.config_parser.options(section_name)
-

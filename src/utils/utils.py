@@ -81,12 +81,6 @@ class BetInfo:
         return f"第{self.sequence}位【{self.rule_type.value[1]}】{self.bet_numbers}{'一次倍投' if self.doubling_count == 1 else '二次倍投'}"
 
 
-def test_bet_info():
-    bet_info = BetInfo("123", BetRuleType.DOUBLE_SAME_KIND_NO_BET, sequence=1, bet_numbers=[1, 21, 32, 3, ],
-                       bet_amount=10, doubling_count=0, win_number=10)
-    print(f"{bet_info}")
-
-
 def find_missing_piece_x(image_path):
     import cv2
     captcha_image = cv2.imread(image_path)
@@ -99,13 +93,6 @@ def find_missing_piece_x(image_path):
     x, y, w, h = cv2.boundingRect(slider_contour)
     slider_position = (x, y, w, h)
     return slider_position[0]
-
-
-def test_get_missing_piece_x(image_path):
-    # Example usage
-    # image_path = "/mnt/data/微信截图_20240723114237.png"
-    missing_piece_x = find_missing_piece_x(image_path)
-    print(f"The x-coordinate of the missing piece's edge is: {missing_piece_x}")
 
 
 class DateUtils:

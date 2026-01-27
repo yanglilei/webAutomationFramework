@@ -3,7 +3,7 @@ from enum import Enum, auto
 # 应用名称
 APP_NAME = "小怪兽"
 # 版本号
-VERSION = "1.0.1"
+VERSION = "1.0.0"
 # 是否需要激活
 IS_NEED_ACTIVATION = False
 

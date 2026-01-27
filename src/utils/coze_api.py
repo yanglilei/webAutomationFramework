@@ -2,7 +2,7 @@ import asyncio
 import random
 from typing import Optional, List
 
-from cozepy import COZE_CN_BASE_URL, MessageType, Message, Coze, TokenAuth, AsyncCoze, Chat, ChatStatus
+from cozepy import COZE_CN_BASE_URL, MessageType, Message, Coze, TokenAuth, AsyncCoze, ChatStatus
 from cozepy.chat import AsyncChatClient
 
 
@@ -13,7 +13,7 @@ class CozeAPI:
         self.bot_id = bot_id
         self.user_id = user_id
 
-    def no_stream_request(self, additional_messages: Optional[List[Message]]=None):
+    def no_stream_request(self, additional_messages: Optional[List[Message]] = None):
         user_id = self.user_id if self.user_id else str(random.randint(100000000, 999999999))
         chat_poll = self.coze.chat.create_and_poll(
             bot_id=self.bot_id,
@@ -29,6 +29,7 @@ class CozeAPI:
 
         return reply_content
 
+
 class AsyncCozeAPI:
     def __init__(self, coze_api_token, bot_id, user_id=None):
         self.lock = asyncio.Lock()
@@ -38,7 +39,7 @@ class AsyncCozeAPI:
         self.bot_id = bot_id
         self.user_id = user_id
 
-    async def no_stream_request(self, additional_messages: Optional[List[Message]]=None):
+    async def no_stream_request(self, additional_messages: Optional[List[Message]] = None):
         async with self.lock:
             if not self.coze:
                 self.coze = AsyncCoze(auth=TokenAuth(token=self.coze_api_token), base_url=COZE_CN_BASE_URL)
@@ -65,6 +66,7 @@ class AsyncCozeAPI:
 
         return reply_content
 
+
 class CommonEDUAgent:
 
     def __init__(self, bot_id="", token=""):
@@ -78,7 +80,7 @@ class CommonEDUAgent:
         self.token = token or "sat_cBUzkoAJDvu3qrVTojpJntczmU2pGtxt5HMMS3OqFUMOkcbrmqO9PUjPddaNkynm"
         self.coze_api = CozeAPI(self.token, self.bot_id)
 
-    def get_reply(self, question: Optional[List[Message]]=None):
+    def get_reply(self, question: Optional[List[Message]] = None):
         return self.coze_api.no_stream_request(question)
 
 
@@ -97,6 +99,7 @@ class AsyncCozeAgent:
     async def get_reply(self, question: Optional[List[Message]] = None):
         return await self.coze_api.no_stream_request(question)
 
+
 class CommonHNKFAgent:
     def __init__(self):
         """
@@ -109,7 +112,7 @@ class CommonHNKFAgent:
         self.token = "sat_cBUzkoAJDvu3qrVTojpJntczmU2pGtxt5HMMS3OqFUMOkcbrmqO9PUjPddaNkynm"
         self.coze_api = CozeAPI(self.token, self.bot_id)
 
-    def get_reply(self, question: Optional[List[Message]]=None):
+    def get_reply(self, question: Optional[List[Message]] = None):
         return self.coze_api.no_stream_request(question)
 
 
@@ -123,6 +126,6 @@ if __name__ == '__main__':
 
     # 3.发送给智能体
 
-    reply_content = CommonEDUAgent().get_reply([Message.build_user_question_text("我是一位中小学教师，以下是一道题目，请以我的视角解答。要求：直接输出文字，不添加任何格式（包括markdown格式）\n=====\n请问该如何帮助学生爱上学习？")])
+    reply_content = CommonEDUAgent().get_reply([Message.build_user_question_text(
+        "我是一位中小学教师，以下是一道题目，请以我的视角解答。要求：直接输出文字，不添加任何格式（包括markdown格式）\n=====\n请问该如何帮助学生爱上学习？")])
     print(reply_content)
-
