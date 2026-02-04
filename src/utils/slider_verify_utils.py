@@ -130,18 +130,22 @@ class SliderVerifyUtils:
         return distance
 
     @classmethod
-    async def move_slider_slowly_pw_version(cls, move_x: int, btn_slider: Locator, mouse: Mouse):
+    async def move_slider_slowly_pw_version(cls, move_x: int, btn_slider: Locator, page):
         """
         模拟滑块缓慢移动（确保所有移动距离为整数，适配move_by_offset要求）
         :param move_x: 总移动距离（x方向，整数）
         :param btn_slider: 滑块元素（WebElement）
         :param ac: ActionChains实例
         """
-        rect = await btn_slider.bounding_box()
-        await mouse.move(rect['x'], rect['y'])
+        mouse = page.mouse
+        box = await btn_slider.bounding_box()
+        start_x = box["x"]
+        start_y = box["y"]
+        await btn_slider.hover()
         await mouse.down()
-        # time.sleep(random.uniform(0.1, 0.3))  # 按住后停顿
-        # 总步数（确保每步移动1-5像素，避免过大跳动）
+        # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
+        await asyncio.sleep(1) # 按住后停顿
+        # 总步数
         steps = max(12, int(abs(move_x) / 10))  # 至少20步，距离越大步数越多
         current_x = 0  # 当前累计移动x距离（整数）
 
@@ -174,27 +178,20 @@ class SliderVerifyUtils:
             # 5. y方向随机抖动（±2像素，整数）
             # dy = random.randint(-2, 2)
             dy = 0
-
             # 6. 执行移动（确保dx和dy都是整数）
-            # ac.move_by_offset(dx, dy).perform()
             current_x += dx  # 更新累计距离
-
-            await mouse.move(rect['x'] + current_x, rect['y'])
-
+            await mouse.move(start_x + current_x, start_y)
             # 7. 每步延迟（模拟人手速度）
-            await asyncio.sleep(random.uniform(0.001, 0.01))
-            # time.sleep(random.uniform(0.001, 0.01))
+            await asyncio.sleep(random.uniform(0.01, 0.1))
 
         # 8. 最终微调（确保总距离精确到move_x）
         final_adjust = move_x - current_x
         if abs(final_adjust) > 0:
             # ac.move_by_offset(final_adjust, 0).perform()
-            await mouse.move(rect['x'] + move_x, rect['y'])
+            await mouse.move(start_x + move_x, start_y)
             # time.sleep(0.05)
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.2)
 
         # 释放滑块
-        # ac.release().perform()
-        # time.sleep(random.uniform(0.1, 0.2))
         await mouse.up()
-        await asyncio.sleep(2)  # 等待2秒，让验证通过
+        await asyncio.sleep(4)  # 等待2秒，让验证通过

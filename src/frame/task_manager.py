@@ -1,7 +1,7 @@
 # 后台任务管理器（负责任务执行，通过信号与UI通信）
 from typing import Dict, List
 
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
 from src.frame.common.chrome_process_manager import chrome_process_manager
 from src.frame.common.exceptions import BusinessException
@@ -112,7 +112,7 @@ class TaskManager(QObject):
         # 1.加载配置
         task_batches_config = self.load_config(task_batches)
         # 2.启动任务线程
-        executor = TaskBatchExecutor(task_batches_config, self.logger)
+        executor: QThread = TaskBatchExecutor(task_batches_config, self.logger)
         # 一次提交的任务中，action_id相同
         self.task_batch_executors[task_batches[0].get("action_id")] = executor
         executor.one_task_batch_finished.connect(self.on_one_task_batch_finished)
@@ -165,6 +165,7 @@ class TaskManager(QObject):
         """
         # 移除任务批次
         self.task_batch_executors.pop(action_id)
+        self.logger.info(f"action_id={action_id} | 所有批次都执行完成！")
         if not self.task_batch_executors:
             self.logger.debug("所有任务批次完成！")
             # 不支持自动释放，则设置is_running=True，只能手动

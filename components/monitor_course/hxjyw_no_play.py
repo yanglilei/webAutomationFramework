@@ -45,7 +45,7 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
         return True if finished_tips_elem and await finished_tips_elem.is_visible() else False
 
     async def _handle_content_pause_tips(self):
-        confirm_btn = self.get_elem_by_xpath(
+        confirm_btn = await self.get_elem_by_xpath(
             "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
 
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
@@ -62,7 +62,7 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
     async def _handle_content_finished_tips(self):
         ret = False
         xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频已播放完成')]]//a[text()='Ok，我知道了！']"
-        confirm_btn = self.get_elem_by_xpath(xpath)
+        confirm_btn = await self.get_elem_by_xpath(xpath)
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
             await confirm_btn.click()
             # 等待对话框消失
@@ -77,7 +77,7 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
 
     async def _handle_i_am_here(self):
         # 处理弹窗“你还在认真学习吗？”
-        if self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
+        if await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
             # 弹出了“你还在认真学习吗？”的对话框
             verify_code_val = await self.get_elem_by_xpath(
                 "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']").text_content()

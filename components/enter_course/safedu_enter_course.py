@@ -31,7 +31,7 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
         await tab_my_training.click()
         target_iframe = await self.wait_for_visible_by_xpath(10, "//iframe[@name='iframe0']")
         self.switch_to_frame(target_iframe)
-        course_link = self.get_elem_by_css("table#myassess tbody tr:nth-child(1) td:nth-child(1) a")
+        course_link = await self.get_elem_by_css("table#myassess tbody tr:nth-child(1) td:nth-child(1) a")
         if not course_link:
             self.logger.error("未找到课程链接")
             return False, "未找到课程链接"

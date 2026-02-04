@@ -9,7 +9,7 @@ from typing import Optional
 from src.utils.process_utils import ProcessUtils
 
 sys.coinit_flags = 2
-from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer, QThread
+from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer, QThread, qInstallMessageHandler
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QListWidget, QStackedWidget,
@@ -250,6 +250,7 @@ class ResourceMonitor(QThread):
 
     def free_resource(self, status: bool):
         if not status:
+            self.logger.debug("开始清理浏览器资源")
             ProcessUtils.kill_residual_chrome(os.getpid())
             # chrome_process_manager.clean_all_batch_processes()
             self.logger.debug("已释放浏览器资源")
@@ -726,6 +727,9 @@ class MainWindow(QMainWindow):
         
         """
 
+# 自定义Qt日志处理器，输出所有Qt警告/错误
+def qt_message_handler(msg_type, context, msg):
+    LOG.info(f"Qt日志[{msg_type}]: {msg} (文件:{context.file}, 行:{context.line})")
 
 # ======================== 程序入口 ========================
 if __name__ == "__main__":
@@ -734,6 +738,7 @@ if __name__ == "__main__":
         # 高分屏+抗锯齿
         # QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
         # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+        qInstallMessageHandler(qt_message_handler)  # 安装日志处理器
         app = QApplication([])
         app.setStyle(QStyleFactory.create("Fusion"))  # 统一跨平台样式
         win = MainWindow(constants.IS_NEED_ACTIVATION)

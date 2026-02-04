@@ -1,5 +1,4 @@
 import asyncio
-import time
 import random
 from typing import Tuple
 
@@ -20,7 +19,7 @@ class SFEDULogin(BaseLoginTaskNode):
             self.logger.error("未找到登录框")
             return False, "未找到登录框"
         if (await login_tab.text_content()).strip() != "密码登录":
-            login_tab = self.get_elem_by_xpath("//div[contains(text(),'密码登录')]")
+            login_tab = await self.get_elem_by_xpath("//div[contains(text(),'密码登录')]")
             if not login_tab:
                 return False, "未找到密码登录方式"
             await login_tab.click()

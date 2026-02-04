@@ -11,8 +11,6 @@ from Crypto.PublicKey import RSA
 from Crypto.Signature import PKCS1_v1_5 as Signature_PKC
 from Crypto.Util.Padding import pad, unpad
 
-from src.frame.common.constants import Constants
-
 
 class MACUtils:
 
@@ -237,22 +235,3 @@ class CryptoUtil:
         ct_bytes = encrypted_data_bytes[16:]
         cipher = AES.new(self.key, AES.MODE_CBC, iv_bytes)
         return unpad(cipher.decrypt(ct_bytes), AES.block_size).decode(self.encoding)
-
-
-class SysTokenUtil:
-    @classmethod
-    def gen_token(cls, username: str, password: str, expire_date: str):
-        import time
-        data_to_encrypt = f"{int(time.time())}{username}{password}{expire_date}{int(time.time())}sdfds*(fs123)KLdsf(*^%@sdf';oecxcvi&*$##)|{len(username)},{len(password)},{len(str(expire_date))}"
-        return CryptoUtil(key=Constants.SYS_KEY, iv=Constants.SYS_IV).encrypt_data(data_to_encrypt)
-
-    @classmethod
-    def parse_token(cls, encrypted_token):
-        decrypted_data = CryptoUtil(key=Constants.SYS_KEY, iv=Constants.SYS_IV).decrypt_data(encrypted_token)
-        username_length, password_length, period_length = decrypted_data.split("|")[1].split(",")
-        token_payload = decrypted_data.split("|")[0]
-        username = token_payload[10: 10 + int(username_length)]
-        password = token_payload[10 + int(username_length): 10 + int(username_length) + int(password_length)]
-        expire_date = token_payload[10 + int(username_length) + int(password_length): 10 + int(username_length) + int(
-            password_length) + int(period_length)]
-        return username, password, expire_date

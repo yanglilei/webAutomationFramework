@@ -106,7 +106,7 @@ class ChaoXingExamHandler:
         """
         # 提交
         ret = True
-        btn_submit = self.web_operator.get_elem_by_xpath("//a[@class='btnSubmit workBtnIndex']")
+        btn_submit = await self.web_operator.get_elem_by_xpath("//a[@class='btnSubmit workBtnIndex']")
         if btn_submit:
             if not await btn_submit.is_visible():
                 await btn_submit.scroll_into_view_if_needed()
@@ -392,7 +392,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
     async def handle_promission_tips(self):
         tips_elem = await self.get_elem_with_wait_by_xpath(3, "//div[@class='popDiv course-pop']")
         if tips_elem:
-            xpath = self.get_elem_by_xpath("//input[@class='agreeButton']")
+            xpath = await self.get_elem_by_xpath("//input[@class='agreeButton']")
             await xpath.click()
             await asyncio.sleep(1)
             await self.get_elem_by_xpath("//a[contains(@class, 'agreeStart') and text()='开始学习'][2]").click()
@@ -425,18 +425,18 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
         return ret
 
     async def is_current_content_contains_tab(self):
-        if tab_elem := self.get_elem_by_xpath("//div[@id='prev_tab']"):
+        if tab_elem := await self.get_elem_by_xpath("//div[@id='prev_tab']"):
             if tab_elem and await tab_elem.is_visible():
                 return True
         return False
 
-    def has_next_tab(self):
-        return True if self.get_next_tab() else False
+    async def has_next_tab(self):
+        return True if await self.get_next_tab() else False
 
     async def switch_tab(self):
         # 切换到下一个tab
         ret = False
-        if next_tab_elem := self.get_next_tab():
+        if next_tab_elem := await self.get_next_tab():
             if not await next_tab_elem.is_visible():
                 await next_tab_elem.scroll_into_view_if_needed()
                 await asyncio.sleep(0.5)
@@ -447,8 +447,8 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
                 self.logger.error("切换tab失败！")
         return ret
 
-    def get_next_tab(self):
-        return self.get_elem_by_xpath("//div[@id='prev_tab']//li[@class='active']/following-sibling::li[1]")
+    async def get_next_tab(self):
+        return await self.get_elem_by_xpath("//div[@id='prev_tab']//li[@class='active']/following-sibling::li[1]")
 
     async def _is_task_point_contains_video(self, target_iframe_container_elem: Locator = None) -> Tuple[
         bool, Locator]:
@@ -477,7 +477,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
         ret = False
         try:
             # self.switch_to_default_content()
-            # iframe_elem = self.get_elem_by_xpath("//iframe[@id='iframe']")
+            # iframe_elem = await self.get_elem_by_xpath("//iframe[@id='iframe']")
             # if iframe_elem:
             #     self.switch_to_frame(iframe_elem)
             #     ret = True
@@ -554,7 +554,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
                 # self.switch_to_frame(video_iframe)
                 # 处理“继续学习”
                 xpath = "//div[@class='sp_video_pic']//a[text()='继续学习']"
-                if btn_continue := self.get_elem_by_xpath(xpath, video_iframe):
+                if btn_continue := await self.get_elem_by_xpath(xpath, video_iframe):
                     await btn_continue.click()
                     self.first_cal_time_flag = True
                     self.logger.info("用户【%s】处理【继续学习】成功！" % self.username_showed)
@@ -562,7 +562,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
                     return  # 处理完直接返回，有其他的暂停后续再处理
 
                 # 处理“暂停”
-                video_container = self.get_elem_by_xpath("//div[@id='reader']/div", video_iframe)
+                video_container = await self.get_elem_by_xpath("//div[@id='reader']/div", video_iframe)
                 if not video_container:
                     return
 
@@ -570,12 +570,12 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
                 if "vjs-has-started" not in class_attr:
                     # 播放未开始，说明目前处在暂停状态
                     xpath = "//button[@class='vjs-big-play-button']"
-                    btn_play = self.get_elem_by_xpath(xpath, video_iframe)
+                    btn_play = await self.get_elem_by_xpath(xpath, video_iframe)
                     await self.wait_for_disappeared(2, btn_play)
-                    video_container = self.get_elem_by_xpath("//div[@id='reader']/div", video_iframe)
+                    video_container = await self.get_elem_by_xpath("//div[@id='reader']/div", video_iframe)
                     class_attr = await video_container.get_attribute("class")
                     if "vjs-has-started" not in class_attr:
-                        btn_play = self.get_elem_by_xpath(xpath, video_iframe)
+                        btn_play = await self.get_elem_by_xpath(xpath, video_iframe)
                         if btn_play and await btn_play.is_enabled():
                             if not await btn_play.is_visible():
                                 await btn_play.scroll_into_view_if_needed()
@@ -652,13 +652,13 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             ret = time.rjust(8, "0")
         return ret
 
-    def get_next_content(self):
+    async def get_next_content(self):
         xpath = "//li[./div[@class='posCatalog_select posCatalog_active']]/following::li[./div[@class='posCatalog_select']][.//span[@class='orangeNew' and text()>0]][1]"
-        return self.get_elem_by_xpath(xpath)
+        return await self.get_elem_by_xpath(xpath)
 
     async def enter_next_content(self):
         ret = False
-        if next_content := self.get_next_content():
+        if next_content := await self.get_next_content():
             if not await next_content.is_visible():
                 await next_content.scroll_into_view_if_needed()
                 await asyncio.sleep(0.5)
@@ -700,7 +700,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
         ret = False
         # self._switch_to_main_iframe()
         xpath = f"//iframe[@objectid='{object_id}']/parent::div"
-        if task_point_div := self.get_elem_by_xpath(xpath):
+        if task_point_div := await self.get_elem_by_xpath(xpath):
             if "ans-job-finished" in await task_point_div.get_attribute("class"):
                 ret = True
         # self.switch_to_default_content()
@@ -728,10 +728,10 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             await self._switch_next_task_point()
 
     async def _switch_next_task_point(self):
-        if await self.is_current_content_contains_tab() and self.has_next_tab():
+        if await self.is_current_content_contains_tab() and await self.has_next_tab():
             # 处理带有多个tab的页面
             await self.switch_tab()
-        elif next_content := self.get_next_content():
+        elif next_content := await self.get_next_content():
             try:
                 # 点击下一个目录
                 await self.js_click(next_content)
@@ -763,8 +763,8 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             pass
 
     async def _choose_options(self, iframe: FrameLocator):
-        submit_btn = self._get_submit_button(iframe)
-        pre_title = self._get_exam_title(iframe)
+        submit_btn = await self._get_submit_button(iframe)
+        pre_title = await self._get_exam_title(iframe)
         options = await self._get_exam_options(iframe)
         for option in options:
             max_retry_count = 10
@@ -774,7 +774,7 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             await asyncio.sleep(0.5)
             while max_retry_count > 0:
                 # 最多等待5秒，检测回答是否正确
-                if self._is_answer_correct(pre_title, iframe):  # 答案正确，跳出循环
+                if await self._is_answer_correct(pre_title, iframe):  # 答案正确，跳出循环
                     return
                 await asyncio.sleep(0.5)
                 max_retry_count -= 1
@@ -784,13 +784,13 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             #     break
             # time.sleep(0.5)
 
-    def _get_submit_button(self, iframe: FrameLocator):
-        return self.get_elem_by_xpath(
+    async def _get_submit_button(self, iframe: FrameLocator):
+        return await self.get_elem_by_xpath(
             "//div[@class='x-container ans-timelineobjects x-container-default']//a[@id='videoquiz-submit']", iframe)
 
-    def _get_exam_title(self, iframe):
+    async def _get_exam_title(self, iframe):
         # 获取题目
-        title_elem = self.get_elem_by_xpath(
+        title_elem = await self.get_elem_by_xpath(
             "//div[@class='x-container ans-timelineobjects x-container-default']//div[@class='tkItem_title']", iframe)
         return "" if not title_elem else title_elem.text_content()
 
@@ -799,11 +799,11 @@ class ChaoXingMonitorCourse(BaseMonitorCourseTaskNode):
             "//div[@class='x-container ans-timelineobjects x-container-default']//li[@class='ans-videoquiz-opt']//span[@class='tkRadio']",
             iframe)
 
-    def _is_exam_title_changed(self, pre_exam_title, iframe):
-        return True if pre_exam_title != self._get_exam_title(iframe) else False
+    async def _is_exam_title_changed(self, pre_exam_title, iframe):
+        return True if pre_exam_title != await self._get_exam_title(iframe) else False
 
-    def _is_answer_correct(self, pre_exam_title, iframe):
-        return self._is_exam_title_changed(pre_exam_title, iframe)
+    async def _is_answer_correct(self, pre_exam_title, iframe):
+        return await self._is_exam_title_changed(pre_exam_title, iframe)
 
 
 if __name__ == '__main__':

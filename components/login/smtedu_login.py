@@ -42,7 +42,7 @@ class SMTEDULogin(BaseLoginTaskNode):
         if not username_input:
             ret = False, "用户名输入框找不到"
         else:
-            password_input = self.get_elem_by_xpath("//input[@id='tmpPassword']")
+            password_input = await self.get_elem_by_xpath("//input[@id='tmpPassword']")
             if not password_input:
                 ret = False, "密码输入框找不到"
             else:
@@ -50,12 +50,12 @@ class SMTEDULogin(BaseLoginTaskNode):
                 await asyncio.sleep(random.randint(1, 3))
                 await password_input.fill(self.password)
                 await asyncio.sleep(random.randint(1, 2))
-                agree_cb = self.get_elem_by_xpath("//input[@id='agreementCheckbox']")
+                agree_cb = await self.get_elem_by_xpath("//input[@id='agreementCheckbox']")
                 if agree_cb:
                     await agree_cb.click()
 
                 await asyncio.sleep(random.randint(1, 2))
-                login_btn = self.get_elem_by_xpath("//button[@id='loginBtn']")
+                login_btn = await self.get_elem_by_xpath("//button[@id='loginBtn']")
                 if not login_btn:
                     ret = False, "登录按钮找不到到"
                 else:
@@ -97,8 +97,8 @@ class SMTEDULogin(BaseLoginTaskNode):
             #                                              "//div[@class='flx_loginbox fr flx_loginbox2 ipad_logbox']//iframe[@id='tcaptcha_iframe_dy']"))
             # self.web_browser.switch_to.iframe(captcha_iframe)
             # locator_expr = "xpath=//div[@class='flx_loginbox fr flx_loginbox2 ipad_logbox']//iframe[@id='tcaptcha_iframe_dy']"
-            locator_expr = "//div[@class='flx_loginbox fr flx_loginbox2 ipad_logbox']//iframe[@id='tcaptcha_iframe_dy']"
-            captcha_iframe: FrameLocator = self.switch_to_frame(locator_expr)
+            # locator_expr = "//iframe[@id='tcaptcha_iframe_dy']"
+            captcha_iframe: FrameLocator = self.switch_to_frame("div#tcaptcha_transform_dy iframe#tcaptcha_iframe_dy")
             back_ground_img_elem = await self.get_elem_with_wait_by_xpath(10, "//div[@id='slideBg']",
                                                                           iframe=captcha_iframe)
             try:
@@ -116,7 +116,22 @@ class SMTEDULogin(BaseLoginTaskNode):
                     f.write(img.content)
 
                 btn_sliders = captcha_iframe.locator(".tc-fg-item")
-                btn_slider = btn_sliders.nth(1)
+                btn_slider = None
+                for i in range(await btn_sliders.count()):
+                    btn_slider = btn_sliders.nth(i)
+                    box = await btn_slider.bounding_box()
+                    # start_x = box["x"] + box["width"] / 2
+                    # start_y = box["y"] + box["height"] / 2
+                    if 49<= int(box["width"]) <= 51:
+                        break
+                if not btn_slider:
+                    await captcha_iframe.locator("#e_reload").click()
+                    await asyncio.sleep(2)
+                    continue
+
+                # btn_slider = captcha_iframe.locator("/html/body/div/div[3]/div[2]/div[7]")
+                # await btn_slider.focus()
+
                 # iframe = await self.get_frame(iframe_name="tcaptcha_iframe_dy")
                 # iframe = await self.get_frame(iframe_name="https://turing.captcha.qcloud.com")
                 # btn_sliders = await iframe.evaluate('document.querySelectorAll(".tc-fg-item");')
@@ -145,7 +160,8 @@ class SMTEDULogin(BaseLoginTaskNode):
                 # 实际移动的距离=该方法计算出的距离/缩放比例 - 滑块的起始距离
                 move_x = int(x / 2.4 - 30)
                 page = self.get_current_page()
-                await SliderVerifyUtils.move_slider_slowly_pw_version(move_x, btn_slider, page.mouse)
+                await SliderVerifyUtils.move_slider_slowly_pw_version(move_x, btn_slider, page)
+                await asyncio.sleep(2)
                 back_ground_img_elem = await self.get_elem_with_wait_by_xpath(2, "//div[@id='slideBg']",
                                                                               iframe=captcha_iframe)
                 if back_ground_img_elem:
@@ -165,7 +181,7 @@ class SMTEDULogin(BaseLoginTaskNode):
     async def handle_week_password_alert(self):
         alert = await self.get_elem_with_wait_by_xpath(3, "//div[@id='modify__tips_wrapper']")
         if alert:
-            skip_btn = self.get_elem_by_xpath("//button[@id='cancel_sdk']")
+            skip_btn = await self.get_elem_by_xpath("//button[@id='cancel_sdk']")
             try:
                 await skip_btn.click()
             except:
@@ -185,3 +201,5 @@ class SMTEDULogin(BaseLoginTaskNode):
         tmp_dir = Path(SysPathUtils.get_root_dir(), "tmp")
         tmp_dir.mkdir(parents=True, exist_ok=True)
         return tmp_dir
+
+

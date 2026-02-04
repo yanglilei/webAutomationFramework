@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
-
+from typing import List, Optional, Iterable
+import random
 
 def has_reached_time(pre_time, cur_time, target_time):
     return True if pre_time <= target_time <= cur_time else False
@@ -104,3 +104,71 @@ class DateUtils:
         :return:
         """
         return datetime.strptime(expire_date, date_format) < datetime.today()
+
+
+def calculate_request_times(total_records: int, batch_size: int) -> int:
+    """
+    计算分页请求的总次数
+
+    Args:
+        total_records: 总记录数（n），必须是非负整数
+        batch_size: 每次请求获取的记录数（m），必须是正整数
+
+    Returns:
+        int: 总共需要的请求次数
+
+    Raises:
+        ValueError: 当参数不合法时抛出（如batch_size为0/负数，total_records为负数）
+    """
+    # 参数合法性校验
+    if total_records < 0:
+        raise ValueError("总记录数(total_records)不能为负数")
+    if batch_size <= 0:
+        raise ValueError("每次请求条数(batch_size)必须是正整数")
+
+    # 核心计算逻辑：整除 + 余数判断（有剩余则多1次）
+    # 等价于 math.ceil(total_records / batch_size)，但避免浮点运算
+    times, remainder = divmod(total_records, batch_size)
+    return times + 1 if remainder > 0 else times
+
+
+def random_int_exclude_values(start: int, end: int, exclude: Iterable[int]) -> int:
+    """
+    生成 [start, end] 区间内的随机整数，排除指定的多个数值
+
+    Args:
+        start: 区间起始整数（包含）
+        end: 区间结束整数（包含）
+        exclude: 需要排除的整数集合（列表、元组、集合等可迭代对象）
+
+    Returns:
+        int: 符合要求的随机整数
+
+    Raises:
+        ValueError: 1. 区间不合法（start > end）；2. 排除后无可用数值
+        TypeError: exclude 不是可迭代对象
+    """
+    # 基础参数校验
+    if start > end:
+        raise ValueError(f"起始值 {start} 不能大于结束值 {end}")
+
+    # 处理排除列表：去重并转为集合（提升查找效率），同时校验元素类型
+    try:
+        exclude_set = set(exclude)
+    except TypeError:
+        raise TypeError("exclude 必须是列表、元组、集合等可迭代对象")
+
+    for num in exclude_set:
+        if not isinstance(num, int):
+            raise TypeError(f"排除列表中包含非整数类型：{num}（类型：{type(num)}）")
+
+    # 构造候选列表：筛选出区间内不在排除集合中的数
+    # 用集合差集优化（尤其当区间大、排除值多时，比列表推导式更高效）
+    full_range = set(range(start, end + 1))
+    candidates = full_range - exclude_set
+
+    if not candidates:
+        raise ValueError(f"区间 [{start}, {end}] 排除 {sorted(exclude_set)} 后无可用数值")
+
+    # 从候选集合中随机选一个（转列表不影响效率，random.choice需要序列类型）
+    return random.choice(list(candidates))

@@ -130,7 +130,7 @@ class PlaywrightWebOperator:
             await window_handler.bring_to_front()
 
     async def switch_to_window(self, page):
-        if await self._is_window_closed(page):
+        if self._is_window_closed(page):
             return
             # raise ValueError("窗口已关闭")
         self._current_page = page
@@ -230,7 +230,7 @@ class PlaywrightWebOperator:
         if not page:
             page = self.get_current_page()
 
-        if not await self._is_window_closed(page):
+        if not self._is_window_closed(page):
             ret = page.url
         return ret
 
@@ -258,6 +258,7 @@ class PlaywrightWebOperator:
         :return: Playwright Locator对象（兼容原WebElement）
         """
         page = self.get_current_page()
+        ret = None
         try:
             if not iframe:
                 ret = page.locator(locator)  # 先创建Locator（惰性，不立即查DOM）
@@ -266,8 +267,8 @@ class PlaywrightWebOperator:
             # 等待该Locator对应的元素可见，超时时间和原代码一致
             await ret.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
         except Exception:
-            ret = None
-        return ret
+            pass
+        return None if not ret or await ret.count() == 0 else ret
 
     async def get_elem_with_wait_by_xpath(self, wait_time, xpath, visible=True, iframe:Optional[FrameLocator]=None) -> Locator:
         return await self.get_elem_with_wait(wait_time, f"xpath={xpath}", visible, iframe)
@@ -276,18 +277,8 @@ class PlaywrightWebOperator:
         return await self.get_elem_with_wait(wait_time, css, visible, iframe)
 
     async def get_elems(self, locator, iframe=None) -> List[Locator]:
-        page = self.get_current_page()
-        ret: List[Locator] = []
-        try:
-            # by, selector = locator
-            # pw_selector = self._convert_by_to_selector(by, selector)
-            if not iframe:
-                ret = await page.locator(locator).all()
-            else:
-                ret = await iframe.locator(locator).all()
-        except Exception:
-            pass
-        return ret
+        ret = await self.get_elem(locator, iframe)
+        return await ret.all() if ret else []
 
     async def get_elems_by_xpath(self, xpath, iframe=None) -> List[Locator]:
         return await self.get_elems(f"xpath={xpath}", iframe)
@@ -317,7 +308,7 @@ class PlaywrightWebOperator:
     async def get_elems_with_wait_by_css(self, wait_secs, css, visible=True, iframe=None) -> List[Locator]:
         return await self.get_elems_with_wait(wait_secs, css, visible, iframe)
 
-    def get_elem(self, locator, iframe=None) -> Locator:
+    async def get_elem(self, locator, iframe=None) -> Locator:
         page = self.get_current_page()
         ret: Optional[Locator] = None
         try:
@@ -327,13 +318,13 @@ class PlaywrightWebOperator:
                 ret = iframe.locator(locator)
         except Exception:
             pass
-        return ret
+        return None if await ret.count() == 0 else ret
 
-    def get_elem_by_xpath(self, xpath, iframe=None) -> Locator:
-        return self.get_elem(f"xpath={xpath}", iframe)
+    async def get_elem_by_xpath(self, xpath, iframe=None) -> Locator:
+        return await self.get_elem(f"xpath={xpath}", iframe)
 
-    def get_elem_by_css(self, css) -> Locator:
-        return self.get_elem(css)
+    async def get_elem_by_css(self, css) -> Locator:
+        return await self.get_elem(css)
 
     def get_relative_elem(self, elem: Locator, locator) -> Locator:
         ret: Optional[Locator] = None
@@ -451,12 +442,12 @@ class PlaywrightWebOperator:
         timeout = wait_time * 1000
         try:
             if isinstance(locator, Locator):
-                await locator.wait_for(state="visible", timeout=timeout)
+                await locator.wait_for(timeout=timeout, state="visible")
                 ret = locator
             else:
                 ret = page.locator(locator)
-                await ret.wait_for(state="visible", timeout=timeout)
-        except PlaywrightTimeoutError:
+                await ret.wait_for(timeout=timeout, state="visible")
+        except Exception:
             ret = False
         return ret
 

@@ -90,7 +90,7 @@ class AXJXJYExamTaskNode(BaseMCQExamTaskNode):
                 time.sleep(20)
 
     async def go_next_question(self) -> Tuple[bool, str]:
-        next_elem: Locator = self.get_elem_by_xpath(self.XKB_NEXT_QUESTION)
+        next_elem: Locator = await self.get_elem_by_xpath(self.XKB_NEXT_QUESTION)
         if next_elem:
             try:
                 await next_elem.click()

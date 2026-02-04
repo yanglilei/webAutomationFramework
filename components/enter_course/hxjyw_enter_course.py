@@ -91,7 +91,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def handle_after_course_finished(self) -> Tuple[bool, str]:
         # 排除掉这个课程
         self.excluded_courses.append(self.course_name)
-        if btn_go_back := self.get_elem_by_css("div.goback_href"):
+        if btn_go_back := await self.get_elem_by_css("div.goback_href"):
             # 点击返回
             await self.js_click(btn_go_back)
             # 等待页面加载完成
@@ -306,7 +306,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                 # 工作单位为空
                 await self.execute_js(
                     "document.querySelector('input[name=\"workUnit\"]').value='%s'" % user_info[4].split(",")[-1])
-            btn_confirm = self.get_elem_by_xpath(
+            btn_confirm = await self.get_elem_by_xpath(
                 "//div[@class='layui-layer layui-layer-page']//input[@class='layui-btn layui-btn-normal' and @value='保存']")
             if not await btn_confirm.is_visible():
                 await btn_confirm.scroll_into_view_if_needed()
@@ -413,7 +413,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         # 处理课程页面的提示信息，偶尔该页面会有通知，或者弹出学员手册
         alert_tips = await self.wait_for_visible_by_xpath(2, "//div[@id='pop_tips']")
         if alert_tips:
-            btn_confirm = self.get_elem_by_xpath("//a[@class='pop_btn']")
+            btn_confirm = await self.get_elem_by_xpath("//a[@class='pop_btn']")
             if not await btn_confirm.is_visible():
                 await btn_confirm.scroll_into_view_if_needed()
                 await asyncio.sleep(1)
@@ -519,7 +519,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                 return
 
     async def _handle_content_pause_tips(self):
-        confirm_btn = self.get_elem_by_xpath(
+        confirm_btn = await self.get_elem_by_xpath(
             "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
 
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
@@ -539,7 +539,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         if "hxwysqy2025" in self.project_code:
             xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')]//a[text()='Ok，我知道了！']"
 
-        confirm_btn = self.get_elem_by_xpath(xpath)
+        confirm_btn = await self.get_elem_by_xpath(xpath)
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
             await confirm_btn.click()
             # 等待对话框消失

@@ -35,17 +35,17 @@ class DriverConfigFormatter:
         """
         browser_type = cls._format_param(driver_config, "browser_type", "0", optional_val=("0", "1"))
         browser_exe_position = driver_config.get("browser_exe_position")
-        if browser_type == "0":
-            if not browser_exe_position or not browser_exe_position.strip():
-                raise ParamError("请指定浏览器位置")
-            elif not os.path.isabs(browser_exe_position):
-                # 相对路径
-                browser_exe_position = os.path.join(SysPathUtils.get_root_dir(), browser_exe_position)
+        # if browser_type == "0":
+            # if not browser_exe_position or not browser_exe_position.strip():
+            #     raise ParamError("请指定浏览器位置")
+            # elif not os.path.isabs(browser_exe_position):
+            #     # 相对路径
+            #     browser_exe_position = os.path.join(SysPathUtils.get_root_dir(), browser_exe_position)
 
-            browser_exe_position = browser_exe_position.strip()
-            # 绝对路径
-            if not os.path.exists(browser_exe_position):
-                raise ParamError("请指定正确的浏览器位置")
+            # browser_exe_position = browser_exe_position.strip()
+            # # 绝对路径
+            # if not os.path.exists(browser_exe_position):
+            #     raise ParamError("请指定正确的浏览器位置")
 
         hook_port = driver_config.get("hook_port")
         if hook_port:

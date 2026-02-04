@@ -77,7 +77,7 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         return True if finished_tips_elem and await finished_tips_elem.is_visible() else False
 
     async def _handle_content_pause_tips(self):
-        confirm_btn = self.get_elem_by_xpath(
+        confirm_btn = await self.get_elem_by_xpath(
             "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
 
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
@@ -97,7 +97,7 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         if "hxwysqy2025" in self.project_code:
             xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')]//a[text()='Ok，我知道了！']"
 
-        confirm_btn = self.get_elem_by_xpath(xpath)
+        confirm_btn = await self.get_elem_by_xpath(xpath)
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
             await confirm_btn.click()
             # 等待对话框消失
@@ -130,14 +130,15 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         #     if continue_learn := self._get_i_am_here_alert():
         #         if continue_learn.is_displayed():
         #             continue_learn.click()
-        if self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
+        if await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
             # 弹出了“你还在认真学习吗？”的对话框
-            verify_code_val = await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']").text_content()
-            await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']").fill(
+            verify_code_elem = await self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']")
+            verify_code_val = await verify_code_elem.text_content()
+            await (await self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']")).fill(
                 verify_code_val)
-            await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']").click()
+            await (await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")).click()
             self.logger.info("用户【%s】处理“您还在认真学习吗？“弹窗成功" % self.username_showed)
 
     async def _handle_pause(self):

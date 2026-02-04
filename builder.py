@@ -2,10 +2,13 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
 class PyInstallerBuilder:
+    seperator = ";"
+
     def __init__(self):
         pass
         # self.name = name
@@ -37,7 +40,7 @@ class PyInstallerBuilder:
         return sys.platform.startswith('win')
 
     @classmethod
-    def build(cls, conda_env, name, enter_file, icon, datas=[], excludes=[], hidden_imports=[]):
+    def build(cls, conda_env, name, enter_file, icon, datas=[], excludes=[], hidden_imports=[], binarys=[]):
         """
         使用 PyInstaller 打包
         :param conda_env: conda环境名称
@@ -47,11 +50,16 @@ class PyInstallerBuilder:
         :param datas: List[Tuple[str, str]]打包的资源文件,
         :param excludes: 排除的模块
         :param hidden_imports: 隐式导入模块
+        :param binarys: 二进制模块
         """
 
         # 设置标准输出编码为 UTF-8
         # sys.stdout.reconfigure(encoding='utf-8')
-        cmd_segs = ["conda", "activate", conda_env, "&" if cls._is_windows() else '&&', "pyinstaller", '--onefile', '--clean', '-y',
+        # cmd_segs = ["conda", "activate", conda_env, "&" if cls._is_windows() else '&&', "pyinstaller", '--onefile',
+        #             '--clean', '-y',
+        #             f'-n={name}']
+        cmd_segs = ["conda", "activate", conda_env, "&" if cls._is_windows() else '&&', "pyinstaller", '--onefile',
+                    '--clean', '-y',
                     '-w', f'-n={name}']
         if icon:
             # cmd_segs.append(f'--icon={os.path.join(current_dir, icon)}')
@@ -62,6 +70,9 @@ class PyInstallerBuilder:
         if hidden_imports:
             for hidden_import in hidden_imports:
                 cmd_segs.append(f'--hidden-import={hidden_import}')
+        if binarys:
+            for binary in binarys:
+                cmd_segs.append(f'--add-binary={binary[0]}{cls.seperator}{binary[1]}')
 
         cmd_segs.append(enter_file)
 
@@ -177,6 +188,9 @@ class XGSBuilder(PyInstallerBuilder):
                  (".\\conf\\public_key.pem", "conf"),
                  # (".\\conf\\chromedriver.exe", "conf"),
                  (".\\conf\\playwright_stealth_js", "conf\\playwright_stealth_js"),
+                 (".\\conf\\common.onnx", "conf"),
+                 (".\\conf\\common_det.onnx", "conf"),
+                 (".\\conf\\common_old.onnx", "conf"),
                  (".\\Chrome", "Chrome"),
                  # (r"c:\users\lovel\.conda\envs\web_automation_framework\Lib\site-packages\onnxruntime\capi\onnxruntime_providers_shared.dll", r".\onnxruntime\capi"),
                  # (r"c:\users\lovel\.conda\envs\web_automation_framework\Lib\site-packages\ddddocr\common_old.onnx", r".\ddddocr"),
@@ -185,8 +199,50 @@ class XGSBuilder(PyInstallerBuilder):
 
     CONDA_ENV = 'web_automation_framework'
     ENTER_FILE = '.\\src\\ui\\ui_main_window.py'
-    HIDDEN_IMPORTS = ["comtypes.stream"]
-    EXCLUDES = []
+    HIDDEN_IMPORTS = ["comtypes.stream",
+                      "dateutil",
+                      "faker",
+                      "greenlet",
+                      "jinja2",
+                      "jwt",
+                      "markupsafe",
+                      # "mouseinfo",
+                      "openpyxl",
+                      "pandas",
+                      # "Cython",
+                      # "pyasn1",
+                      # "pydivert",
+                      # "pygetwindow",
+                      # "pymsgbox",
+                      "playwright",
+                      "pyautogui",
+                      "psutil",
+                      "PIL",
+                      "pydantic_core",
+                      "pyqt5",
+                      "pyperclip",
+                      "Pythonwin",
+                      "pywin32_system32",
+                      "pytz",
+                      "sqlite3",
+                      "tenacity",
+                      "dataclass_wizard"
+                      ]
+    EXCLUDES = ["src.frame.task",
+                "src.utils.jwt_utils",
+                "src.utils.hardware_finger_utils",
+                "src.utils.rsa_key_utils",
+                "src.frame.common.key_client"]
+
+    ROOT_PATH = os.getcwd()
+
+    BINARYS = [
+        (f"{ROOT_PATH}\\src\\frame\\task.pyd", "src\\frame"),
+        (f"{ROOT_PATH}\\src\\utils\\jwt_utils.pyd", "src\\utils"),
+        (f"{ROOT_PATH}\\src\\utils\\hardware_finger_utils.pyd", "src\\utils"),
+        (f"{ROOT_PATH}\\src\\utils\\rsa_key_utils.pyd", "src\\utils"),
+        (f"{ROOT_PATH}\\src\\frame\\common\\key_client.pyd", "src\\frame\\common"),
+    ]
 
     @classmethod
     def backup_file(cls, file_path):
@@ -229,11 +285,36 @@ class XGSBuilder(PyInstallerBuilder):
             f.write(content)
 
     @classmethod
+    def run_command(cls, command, description):
+        print(f"\n执行: {description}")
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, encoding="utf-8")
+        if result.returncode != 0:
+            print(f"错误: {description} 失败")
+            print(f"标准输出:\n{result.stdout}")
+            print(f"错误输出:\n{result.stderr}")
+            exit(1)
+        else:
+            print(f"成功: {description}")
+
+    @classmethod
     def do_build(cls):
+
+        print("=== 步骤1: 备份原始常量文件 ===")
         # 1. 备份原始常量文件
         backup_path = cls.backup_file(cls.CONSTANTS_FILE)
         print(f"已备份常量文件到：{backup_path}")
 
+        print("=== 步骤2: 使用Cython编译关键模块 ===")
+        # 编译前先删除pyd文件
+        for file, _ in cls.BINARYS:
+            if os.path.exists(file):
+                os.remove(file)
+        cmd_segs = ["conda", "activate", cls.CONDA_ENV, "&" if sys.platform.startswith('win') else '&&', "python",
+                    f"{cls.ROOT_PATH}\\cython_script\\frame.py", "build_ext", "--inplace"]
+        cls.run_command(cmd_segs, "Cython编译")
+        time.sleep(2)
+
+        print("=== 步骤3: 使用Pyinstaller打包成exe ===")
         try:
             # 2. 替换常量值
             cls.replace_constants(cls.CONSTANTS_FILE)
@@ -243,7 +324,7 @@ class XGSBuilder(PyInstallerBuilder):
             # 3. 调用PyInstaller打包
             super().build(cls.CONDA_ENV, f"{cls.TARGET_APP_NAME}V{cls.TARGET_VERSION}",
                           cls.ENTER_FILE, cls.ICON, cls.ADD_DATAS,
-                          cls.EXCLUDES, cls.HIDDEN_IMPORTS)
+                          cls.EXCLUDES, cls.HIDDEN_IMPORTS, cls.BINARYS)
         finally:
             # 4. 恢复原始常量文件
             cls.restore_file(cls.CONSTANTS_FILE, backup_path)
@@ -256,7 +337,7 @@ def build_xgs():
     :return:
     """
     # 打包时要替换的参数（可根据需要修改）
-    XGSBuilder.TARGET_VERSION = "1.0.2"  # 替换后的版本号
+    XGSBuilder.TARGET_VERSION = "1.0.8"  # 替换后的版本号
     XGSBuilder.TARGET_IS_ACTIVATION = False  # 替换后的激活状态
     XGSBuilder.do_build()  # 打包
 

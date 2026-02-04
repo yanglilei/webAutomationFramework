@@ -7,9 +7,7 @@ import shortuuid
 
 from src.frame.base.base_task_node import BaseNode, JSNode, BasePYNode
 from src.frame.common.constants import NodeState
-from src.frame.common.playwright_driver_manager import WebDriverManager
-from src.frame.component_manager import GeneralComponentManager
-from src.frame.dto.driver_config import DriverConfigFormatter
+from src.frame.component_manager import component_manager
 from src.utils.async_utils import get_event_loop_safely
 from src.utils.clazz_utils import ClazzUtils
 from src.utils.sys_path_utils import SysPathUtils
@@ -38,7 +36,7 @@ class Task:
         self.nodes: Dict[int, BaseNode] = {}  # 节点注册表：key=node_id, value=BaseTaskNode实例
         self.context: Dict[str, Any] = {}  # 任务上下文，用于节点间数据传递
         self.start_node_id: Optional[int] = None  # 流程起始节点ID
-        self.component_manager = GeneralComponentManager()  # 组件管理器
+        self.component_manager = component_manager  # 组件管理器
         self.executed_nodes: List[str] = []  # 记录已执行的节点ID（执行链路）
         self.current_node_id = None  # 当前执行节点ID
         self.user_manager = user_manager  # 用户管理器，用于操作用户数据
@@ -194,7 +192,7 @@ class Task:
             # 任务整体重登次数（从头执行的次数）
             task_relogin_count = 0
             # 核心调度逻辑：按next_node_id循环执行
-            while self.current_node_id is not None:
+            while self.current_node_id:
                 # 1.获取当前节点（load_config方法中实例化了所有节点）
                 current_node = self.nodes.get(self.current_node_id)
                 if not current_node:
@@ -241,10 +239,11 @@ class Task:
                 else:
                     # 获取下一个节点ID
                     self.current_node_id = current_node.next_node_id
-
+            else:
+                self.logger.info(f"无下一个节点，任务执行完毕！")
         except Exception as e:
             # self.logger.debug(f"任务执行异常：", exc_info=True)
-            self.logger.error(f"任务执行异常：{str(e)}", exc_info=True)
+            self.logger.exception(f"任务执行异常：")
             is_success = False
         finally:
             # if self.task_tmpl.get("is_quit_browser_when_finished", True):

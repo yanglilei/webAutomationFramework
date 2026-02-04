@@ -223,7 +223,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
 
         first_subject = await self.get_elem_with_wait_by_xpath(10, xpath_tmp % '未合格', iframe)
         if not first_subject:
-            if self.get_elem_by_xpath(xpath_tmp % '已合格'):
+            if await self.get_elem_by_xpath(xpath_tmp % '已合格'):
                 # 学习已合格了，截图保存
                 succ_dir = Path(SysPathUtils.get_root_dir(), "succ")
                 succ_dir.mkdir(parents=True, exist_ok=True)

@@ -13,7 +13,7 @@ class SAFEDUMonitorCourse(BaseMonitorCourseTaskNode):
         self.logger.info(f"当前课程【{self.course_name}】剩余时间：{remaining_time}")
 
     async def is_current_course_finished(self):
-        elem = self.get_elem_by_xpath("//div[@class='vjs-control-bar']/button[1]")
+        elem = await self.get_elem_by_xpath("//div[@class='vjs-control-bar']/button[1]")
         if elem:
             return True if "vjs-ended" in await elem.get_attribute("class") else False
         return False
@@ -27,7 +27,7 @@ class SAFEDUMonitorCourse(BaseMonitorCourseTaskNode):
         return await self.execute_js("document.querySelector('div.vjs-remaining-time-display').textContent")
 
     async def handle_slider_bar(self):
-        slider_bar = self.get_elem_by_xpath("//div[@class='handler handler_bg']")
+        slider_bar = await self.get_elem_by_xpath("//div[@class='handler handler_bg']")
         if slider_bar and await slider_bar.is_enabled() and await slider_bar.is_visible():
             box = await slider_bar.bounding_box()
             window = self.get_latest_window()

@@ -16,11 +16,11 @@ class AXJXJYLoginTaskNode(BaseLoginTaskNode):
         # 设置用户名
         await username_input.fill(self.username)
         # 找到密码的输入框
-        password_input = self.get_elem_by_xpath("//input[@aria-label='密码']")
+        password_input = await self.get_elem_by_xpath("//input[@aria-label='密码']")
         # 设置密码
         await password_input.fill(self.password)
         # 定位登录按钮
-        login_btn_element = self.get_elem_by_xpath("//div[@aria-label='登录']//div[@class='btn-inner style-wrap']")
+        login_btn_element = await self.get_elem_by_xpath("//div[@aria-label='登录']//div[@class='btn-inner style-wrap']")
         try:
             await login_btn_element.click()
         except:
