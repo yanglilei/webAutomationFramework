@@ -6,7 +6,7 @@ from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from src.frame.common.chrome_process_manager import chrome_process_manager
 from src.frame.common.exceptions import BusinessException
 from src.frame.dao.db_manager import db
-from src.frame.task_batch_executor import TaskBatchExecutor
+from src.frame.task_batch_executor_sync import TaskBatchExecutor
 
 
 class TaskManager(QObject):
@@ -142,6 +142,12 @@ class TaskManager(QObject):
             else:  # 无指定批次为清除所有的资源
                 for coroutine_scheduler in task_batch_executor.coroutine_schedulers.values():
                     coroutine_scheduler.cancel()
+
+        for task_batch_executor in self.task_batch_executors.values():
+            # 说明批次已经运行了（运行中或者已结束)
+            if batch_nos:
+                for batch_no in batch_nos:
+                    task_batch_executor.cancel_all(batch_no)
 
         #### 关闭浏览器 ####
         for batch_no in batch_nos:

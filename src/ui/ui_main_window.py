@@ -234,26 +234,26 @@ class ActivationPage(BasePage):
 
 
 # 创建一个资源监控线程
-class ResourceMonitor(QThread):
-    """资源监控线程"""
-    signal = pyqtSignal(bool)
-
-    def __init__(self, logger, ui_running_center: 'RunningCenterPage'):
-        super().__init__()
-        self.logger = logger
-        self.ui_running_center = ui_running_center
-
-    def run(self):
-        while True:
-            self.free_resource(self.ui_running_center.has_running_task())
-            time.sleep(5)
-
-    def free_resource(self, status: bool):
-        if not status:
-            self.logger.debug("开始清理浏览器资源")
-            ProcessUtils.kill_residual_chrome(os.getpid())
-            # chrome_process_manager.clean_all_batch_processes()
-            self.logger.debug("已释放浏览器资源")
+# class ResourceMonitor(QThread):
+#     """资源监控线程"""
+#     signal = pyqtSignal(bool)
+#
+#     def __init__(self, logger, ui_running_center: 'RunningCenterPage'):
+#         super().__init__()
+#         self.logger = logger
+#         self.ui_running_center = ui_running_center
+#
+#     def run(self):
+#         while True:
+#             self.free_resource(self.ui_running_center.has_running_task())
+#             time.sleep(5)
+#
+#     def free_resource(self, status: bool):
+#         if not status:
+#             self.logger.debug("开始清理浏览器资源")
+#             ProcessUtils.kill_residual_chrome(os.getpid())
+#             # chrome_process_manager.clean_all_batch_processes()
+#             self.logger.debug("已释放浏览器资源")
 
 
 # ======================== 主窗口（核心布局） ========================

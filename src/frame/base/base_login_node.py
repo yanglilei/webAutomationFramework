@@ -22,14 +22,14 @@ class BaseLoginTaskNode(BasePYNode):
         # 是否自动填充密码，true-如果是身份证作为账号，则取用户名后六位作为密码
         self.is_auto_fill_pwd = is_auto_fill_pwd
 
-    async def execute(self, context: Dict) -> bool:
+    def execute(self, context: Dict) -> bool:
         self.state = NodeState.RUNNING
         try:
-            ret = await self.login()
+            ret = self.login()
         except Exception as e:
             if self.user_mode == 1:  # 表格模式，更新表格中的内容
                 self.user_manager.update_login_msg_by_username(self.username, "登录异常")
-            self.logger.error(f"登录异常：{str(e)}")
+            self.logger.exception(f"登录异常：")
             self.node_result["is_success"] = False
             self.node_result["error_msg"] = f"登录异常：{str(e)}"
             return False
@@ -47,10 +47,10 @@ class BaseLoginTaskNode(BasePYNode):
                 self.node_result["is_success"] = True
                 return True
 
-    async def clean_up(self):
+    def clean_up(self):
         self.state = NodeState.READY
 
-    async def login(self) -> Tuple[bool, str]:
+    def login(self) -> Tuple[bool, str]:
         """
         登录
         :return: (True, success) or (False, fail reason)
@@ -66,16 +66,16 @@ class BaseLoginTaskNode(BasePYNode):
 
         # 关闭其他页面，重登的时候清除掉其余的窗口
         if len(self.get_windows()) > 0:
-            await self.close_other_windows(self.get_latest_window())
+            self.close_other_windows(self.get_latest_window())
 
         # 加载页面
-        await self.load_url(self.login_url)
+        self.load_url(self.login_url)
         # 进入登录页面
-        await self.enter_login_page()
+        self.enter_login_page()
         # 登录
-        return await self.do_login()
+        return self.do_login()
 
-    async def enter_login_page(self):
+    def enter_login_page(self):
         """
         进入登录页面
         登录前的预操作，比如：让用户名、密码框展示出来！
@@ -84,7 +84,7 @@ class BaseLoginTaskNode(BasePYNode):
         pass
 
     @abstractmethod
-    async def do_login(self) -> Tuple[bool, str]:
+    def do_login(self) -> Tuple[bool, str]:
         """
         登录
         :return: (bool, str): (status, reason) True-success, False-fail

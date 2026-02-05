@@ -1,4 +1,6 @@
 import json
+import time
+from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Tuple, List, Any, Optional, Dict
 
 import shortuuid
@@ -6,16 +8,15 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from src.frame.common.chrome_process_manager import chrome_process_manager
 from src.frame.common.coroutine_scheduler import CoroutineScheduler
-from src.frame.common.playwright_driver_manager import WebDriverManager
+from src.frame.common.drissionpage_driver_manager import WebDriverManager
 from src.frame.common.qt_log_redirector import qt_logger
 from src.frame.common.user_manager import UserManager, UserInfoLocation
 from src.frame.dao.db_manager import db
 from src.frame.dto.driver_config import DriverConfigFormatter, DriverConfig
 from src.frame.hot_reload_manager import NodeHotReloadManager
 from src.frame.task import Task
-from src.frame.task_scheduler import TaskScheduler
+from src.frame.task_scheduler_sync import TaskScheduler
 from src.utils import basic
-from src.utils.async_utils import get_event_loop_safely
 
 
 class TaskBatchExecutor(QThread):
@@ -47,9 +48,13 @@ class TaskBatchExecutor(QThread):
         self.web_driver_manager = WebDriverManager(self.logger)  # web驱动管理器
         self.has_unreleased_resource = False  # 是否还有未释放的资源
         self.chrome_process_manager = chrome_process_manager  # chrome进程管理器
+        self.executors: Dict[str, ThreadPoolExecutor] = {}  # 线程池
+        self.futures = {}  # 线程执行结果列表
 
     def _reset(self):
         self.future_list = []  # 任务执行结果列表
+        self.executors = {}  # 线程池
+        self.futures = {}  # 线程执行结果列表
         self.total_task_count = 0  # 任务总数
         self.completed_task_count = 0  # 已完成任务数
         self.success_task_count = 0  # 成功任务数
@@ -72,7 +77,7 @@ class TaskBatchExecutor(QThread):
             self.all_task_batch_finished.emit(self.action_id, self.batch_nos, self.has_unreleased_resource)
             if not self.has_unreleased_resource:
                 # 没有未释放的资源，则关闭web驱动
-                get_event_loop_safely().run_until_complete(self.web_driver_manager.close())
+                self.web_driver_manager.close()
 
     def _format_user_info(self, user_mode, user_info):
         # 返回数据：([(用户名, 密码)], Optional[UserManager])
@@ -125,28 +130,44 @@ class TaskBatchExecutor(QThread):
             self.logger.info(
                 f"启动批量任务 | 任务批次：{batch_no} | 待处理用户数：{self.total_task_count} | 最大并发数：{self.total_task_count}")
             # 2. 初始化线程池（无界队列）
-            # with ThreadPoolExecutor(max_workers=self.total_task_count) as executor:
-            #     # 提交所有用户任务（无阻塞，超出并发数自动排队）
-            #     login_interval = self.get_login_interval(task_batch_config, global_config)
-            #     for user_config in unfinished_users:
-            #         future = executor.submit(self.execute_single_user_task, user_manager, user_config,
-            #                                  task_batch_config, global_config, self.logger)
-            #         self.future_list.append(future)
-            #         future.add_done_callback(lambda f: self.task_done_callback(f, (task_batch_config, global_config)))
-            #         # 登录间隔
-            #         time.sleep(login_interval)
-            coro_funcs = []
-            for user in ok_users:
-                coro_funcs.append((self.execute_single_user_task, (user_manager, user,
-                                                                   task_batch_config, self.logger), {}))
-            # 执行协程
-            get_event_loop_safely().run_until_complete(
-                self._execute_one_task_batch(coro_funcs, task_batch_config))
+            with ThreadPoolExecutor(max_workers=self.total_task_count) as executor:
+                # 提交所有用户任务（无阻塞，超出并发数自动排队）
+                self.executors[batch_no] = executor
+                future_list = []
+                login_interval = self.get_login_interval(task_batch_config)
+                user_count = len(unfinished_users)
+                for idx, user_config in enumerate(unfinished_users):
+                    future = executor.submit(self.execute_single_user_task, user_manager, user_config,
+                                             task_batch_config, self.logger)
+                    future_list.append(future)
+                    future.add_done_callback(lambda f: self.task_done_callback(f, task_batch_config))
+                    # 登录间隔
+                    if idx < user_count - 1:
+                        time.sleep(login_interval)
+                self.futures[batch_no] = future_list
+            # coro_funcs = []
+            # for user in ok_users:
+            #     coro_funcs.append((self.execute_single_user_task, (user_manager, user,
+            #                                                        task_batch_config, self.logger), {}))
+            # # 执行协程
+            # get_event_loop_safely().run_until_complete(
+            #     self._execute_one_task_batch(coro_funcs, task_batch_config))
         except Exception as e:
             self.logger.error(f"任务批次号：{batch_no} | 启动任务失败：{str(e)}")
             self.db.task_batch_dao.update_by_batch_no(batch_no, {"execute_status": 2, "remark": str(e)})
 
-    async def _execute_one_task_batch(self, coro_funcs, task_batch_config):
+    def cancel_all(self, batch_no: str):
+        if batch_no not in self.futures:
+            return
+
+        for future in self.futures[batch_no]:
+            future.cancel()
+        self.futures.pop(batch_no)
+
+        self.executors.get(batch_no).shutdown(wait=False)
+        self.executors.pop(batch_no)
+
+    def _execute_one_task_batch(self, coro_funcs, task_batch_config):
         """执行一个批次任务"""
         # 创建一个协程调度器
         batch_info = task_batch_config.get("batch_info")
@@ -155,7 +176,7 @@ class TaskBatchExecutor(QThread):
         scheduler = CoroutineScheduler(batch_no)
         self.coroutine_schedulers[batch_no] = scheduler
         # 当所有任务完成后该方法才会返回
-        await scheduler.add_tasks_with_interval(coro_funcs=coro_funcs, interval=login_interval,
+        scheduler.add_tasks_with_interval(coro_funcs=coro_funcs, interval=login_interval,
                                                 callback=lambda task_id, status, result,
                                                                 exec: self.on_one_task_batch_done(
                                                     task_id, status, result, exec, task_batch_config,
@@ -188,7 +209,7 @@ class TaskBatchExecutor(QThread):
             # 任务执行完毕，关闭当前用户的浏览器
             if task_batch_config.get("task_tmpl").get("is_quit_browser_when_finished", True):
                 self.logger.debug(f"关闭专属Context")
-                get_event_loop_safely().run_until_complete(self.web_driver_manager.remove_user_driver(batch_no, username))
+                self.web_driver_manager.remove_user_driver(batch_no, username)
             else:
                 self.logger.info(f"任务执行完毕，不关闭当前用户的浏览器，请用户手动关闭！")
                 self.has_unreleased_resource = True  # 不能自动释放，需要手动释放
@@ -201,12 +222,17 @@ class TaskBatchExecutor(QThread):
         """
         try:
             batch_info = task_batch_config.get("batch_info")  # 批次信息
-            # global_config = batch_info.get("global_config")  # 全局配置
             batch_no = batch_info.get("batch_no")  # 批次号
             self.logger.debug(f"任务批次号【{batch_no}】 | 启动任务")
-            coro_funcs = [(self.execute_no_user_task, (task_batch_config, self.logger), {})]
-            get_event_loop_safely().run_until_complete(
-                self._execute_one_task_batch(coro_funcs, task_batch_config))
+
+            self.execute_no_user_task(task_batch_config, self.logger)
+            self.logger.info(f"任务批次号：{batch_no} | 所有任务执行完毕！")
+            # 一个批次中所有的任务都完成了，更新批次状态
+            self.db.task_batch_dao.update_status(batch_no, 2)
+            self.one_task_batch_finished.emit(self.action_id, batch_no)
+            # coro_funcs = [(self.execute_no_user_task, (task_batch_config, self.logger), {})]
+            # get_event_loop_safely().run_until_complete(
+            #     self._execute_one_task_batch(coro_funcs, task_batch_config))
         except Exception as e:
             self.logger.error(f"任务执行失败：{str(e)}")
 
@@ -216,7 +242,7 @@ class TaskBatchExecutor(QThread):
         task_login_interval = int(task_batch_config.get("task_tmpl", {}).get("login_interval", 0))
         return task_login_interval if task_login_interval is not None and task_login_interval > 0 else global_login_interval
 
-    async def execute_single_user_task(self, user_manager,
+    def execute_single_user_task(self, user_manager,
                                        user_config: Tuple[str, str],
                                        task_batch_config: dict,
                                        logger):
@@ -233,7 +259,7 @@ class TaskBatchExecutor(QThread):
             # 设置日志显示的用户名
             qt_logger.set_current_user(basic.mask_username(username))
             # 创建浏览器驱动
-            driver = await self._create_driver(username, batch_no, DriverConfigFormatter.format(global_config))
+            driver = self._create_driver(username, batch_no, DriverConfigFormatter.format(global_config))
             # 创建任务
             task = Task(driver, user_config, task_batch_config, logger, user_manager)
             # 提交任务
@@ -241,7 +267,7 @@ class TaskBatchExecutor(QThread):
             # 注册任务到热加载器中，热加载器负责回调任务调度器的热加载方法！pause by zcy! 20260127!
             self._register_hot_reload(task)
             # 启动任务
-            task_success = await self.task_scheduler.start_task(task.task_uuid)
+            task_success = self.task_scheduler.start_task(task.task_uuid)
         except Exception as e:
             logger.exception(f"任务执行异常：")
         finally:
@@ -275,7 +301,7 @@ class TaskBatchExecutor(QThread):
             task.hot_reload(component_path)
         self.logger.info(f"结束热更新，组件路径：{component_path}")
 
-    async def execute_no_user_task(self, task_batch_config: dict, logger):
+    def execute_no_user_task(self, task_batch_config: dict, logger):
         """执行单个用户任务（Driver外部创建+重登后从头执行）"""
         username = f"NO_USER_{shortuuid.ShortUUID().random(length=7)}"
         qt_logger.set_current_user(basic.mask_username(username))
@@ -284,11 +310,11 @@ class TaskBatchExecutor(QThread):
         task = None
         try:
             batch_info = task_batch_config.get("batch_info", {})
-            driver = await self._create_driver(username, batch_info.get("batch_no"),
+            driver = self._create_driver(username, batch_info.get("batch_no"),
                                             DriverConfigFormatter.format(batch_info.get("global_config")))
             task = Task(driver, (username, ''), task_batch_config, logger)
             self.task_scheduler.submit_task(task)
-            task_success = await self.task_scheduler.start_task(task.task_uuid)
+            task_success = self.task_scheduler.start_task(task.task_uuid)
         except Exception as e:
             logger.exception(f"任务执行异常：")
         finally:
@@ -303,7 +329,7 @@ class TaskBatchExecutor(QThread):
             # self.user_task_finished_signal.emit(username, task_success)
         return username, task_success
 
-    async def _create_driver(self, username, batch_no, driver_config: DriverConfig):
+    def _create_driver(self, username, batch_no, driver_config: DriverConfig):
         # 设置日志显示的用户名
         qt_logger.set_current_user(basic.mask_username(username))
         # 步骤1：注册批次
@@ -311,18 +337,26 @@ class TaskBatchExecutor(QThread):
         # 步骤2：创建进程捕获器（记录操作前的Chrome进程池）
         capture_func = self.chrome_process_manager.capture_new_chrome_processes(batch_no)
         # 步骤3：创建用户浏览器
-        driver = await self.web_driver_manager.create_user_driver(username, batch_no, driver_config)
+        driver = self.web_driver_manager.create_user_driver(username, batch_no, driver_config)
         # 步骤4：执行捕获，获取新增的Chrome进程组
         capture_func()
         return driver
 
     # 4. 监听任务完成（不阻塞UI线程）
     def task_done_callback(self, future, extra_arg):
-        task_batch_config, _ = extra_arg
+        task_batch_config = extra_arg
         batch_no = task_batch_config.get("batch_info").get("batch_no")
         try:
             val = future.result()  # 捕获任务异常
             username, is_success = val
+            # 任务执行完毕，关闭当前用户的浏览器
+            if task_batch_config.get("task_tmpl").get("is_quit_browser_when_finished", True):
+                self.logger.debug(f"关闭专属Context")
+                self.web_driver_manager.remove_user_driver(batch_no, username)
+            else:
+                self.logger.info(f"任务执行完毕，不关闭当前用户的浏览器，请用户手动关闭！")
+                self.has_unreleased_resource = True  # 不能自动释放，需要手动释放
+
             if task_batch_config.get("task_tmpl").get("start_mode") == 1:
                 # 有用户模式，更新任务批次信息
                 if is_success:
@@ -337,12 +371,12 @@ class TaskBatchExecutor(QThread):
             self.logger.exception(f"任务回调，执行异常：{str(e)}")
         finally:
             # 所有任务完成后触发信号
-            if all([f.done() for f in self.future_list]) and self.task_batches_config.index(extra_arg) == len(
+            if all([f.done() for f in self.futures[batch_no]]) and self.task_batches_config.index(extra_arg) == len(
                     self.task_batches_config) - 1:
                 self.logger.info(f"任务批次号：{batch_no} | 所有任务执行完毕！")
                 # 一个批次中所有的任务都完成了，更新批次状态
                 self.db.task_batch_dao.update_status(batch_no, 2)
-                self.one_task_batch_finished.emit(self.action_id)
+                self.one_task_batch_finished.emit(self.action_id, batch_no)
 
     def terminate_task(self, batch_no: str = "", task_uuid: str = "", reason="手动强制停止"):
         """

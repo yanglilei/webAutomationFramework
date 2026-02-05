@@ -4,7 +4,11 @@ import time
 
 import cv2
 import numpy as np
-from playwright.async_api import Locator, Mouse
+from DrissionPage._elements.chromium_element import ChromiumElement
+from DrissionPage._pages.chromium_tab import ChromiumTab
+from DrissionPage._pages.chromium_frame import ChromiumFrame
+
+from playwright.async_api import Locator
 
 
 class SliderVerifyUtils:
@@ -144,7 +148,7 @@ class SliderVerifyUtils:
         await btn_slider.hover()
         await mouse.down()
         # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
-        await asyncio.sleep(1) # 按住后停顿
+        await asyncio.sleep(1)  # 按住后停顿
         # 总步数
         steps = max(12, int(abs(move_x) / 10))  # 至少20步，距离越大步数越多
         current_x = 0  # 当前累计移动x距离（整数）
@@ -195,3 +199,63 @@ class SliderVerifyUtils:
         # 释放滑块
         await mouse.up()
         await asyncio.sleep(4)  # 等待2秒，让验证通过
+
+    @classmethod
+    def move_slider_slowly_dp_version(cls, move_x: int, btn_slider: ChromiumElement, page: ChromiumTab|ChromiumFrame):
+        """
+        模拟滑块缓慢移动（确保所有移动距离为整数，适配move_by_offset要求）
+        :param move_x: 总移动距离（x方向，整数）
+        :param btn_slider: 滑块元素（WebElement）
+        :param page: 页面或者iframe实例
+        """
+        page.actions.move_to(btn_slider).hold(btn_slider)
+        # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
+        time.sleep(1)  # 按住后停顿
+        # 总步数
+        steps = max(12, int(abs(move_x) / 10))  # 至少20步，距离越大步数越多
+        current_x = 0  # 当前累计移动x距离（整数）
+
+        for i in range(steps):
+            # 1. 计算当前步的比例（0→1）
+            ratio = i / steps
+
+            # 2. 基于正弦曲线计算理论移动比例（先加速后减速）
+            if ratio < 0.5:
+                # 前半段加速：sin(π*ratio) 从0→1
+                speed_ratio = 2 * ratio
+            else:
+                # 后半段减速：sin(π*(1-ratio)) 从1→0
+                speed_ratio = 2 * (1 - ratio)
+
+            # 3. 计算当前步的理论移动距离（加入随机波动，确保为整数）
+            # 总理论移动 = move_x * 速度占比，再随机±10%波动
+            raw_dx = move_x * speed_ratio * random.uniform(0.9, 1.1)
+            dx = round(raw_dx)  # 转换为整数（核心修正点）
+
+            # 4. 控制不超过剩余距离（避免超调）
+            remaining_x = move_x - current_x
+            if move_x > 0:
+                dx = min(dx, remaining_x)  # 正向移动，不超过剩余
+                dx = max(dx, 1)  # 至少移动1像素（避免停滞）
+            else:
+                dx = max(dx, remaining_x)  # 反向移动，不超过剩余
+                dx = min(dx, -1)  # 至少移动-1像素
+
+            # 5. y方向随机抖动（±2像素，整数）
+            dy = 0
+            # 6. 执行移动（确保dx和dy都是整数）
+            page.actions.move(dx, 0, 0)
+            current_x += dx  # 更新累计距离
+            # 7. 每步延迟（模拟人手速度）
+            time.sleep(random.uniform(0.01, 0.1))
+
+        # 8. 最终微调（确保总距离精确到move_x）
+        final_adjust = move_x - current_x
+        if abs(final_adjust) > 0:
+            page.actions.move(final_adjust, 0, 0)
+            # time.sleep(0.05)
+            time.sleep(0.2)
+
+        # 释放滑块
+        page.actions.release(btn_slider)
+        time.sleep(4)  # 等待2秒，让验证通过

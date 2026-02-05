@@ -8,7 +8,6 @@ import shortuuid
 from src.frame.base.base_task_node import BaseNode, JSNode, BasePYNode
 from src.frame.common.constants import NodeState
 from src.frame.component_manager import component_manager
-from src.utils.async_utils import get_event_loop_safely
 from src.utils.clazz_utils import ClazzUtils
 from src.utils.sys_path_utils import SysPathUtils
 
@@ -130,8 +129,6 @@ class Task:
         创建节点实例
         :param node_cfg: 节点配置信息 tb_node表
         """
-        # 创建浏览器驱动，一个用户对应一个浏览器驱动，不能在协程中创建！！！
-        # driver = await self.driver_manager.create_user_driver(self.username, self.batch_no, DriverConfigFormatter.format(self.global_config))
         # 填充完整组件路径
         component_path = self._complete_component_path(node_cfg["component_path"])
         # 更新组件路径
@@ -171,7 +168,7 @@ class Task:
 
         return node_instance
 
-    async def run(self, reset_context: bool = True) -> bool:
+    def run(self, reset_context: bool = True) -> bool:
         """
         执行整个任务流程
         :return : True-成功；False-失败
@@ -204,10 +201,10 @@ class Task:
 
                 self.logger.info(f"开始执行节点: {self.current_node_id} ({node_name})")
                 # 2.执行当前节点
-                node_success = await current_node.execute(self.context)
+                node_success = current_node.execute(self.context)
                 with self.hot_reload_lock:  # 加锁目的：有热更新节点时，等待热更新执行完毕
                     # 3.清理当前节点，非常重要！节点中需要清理的资源，如变量、文件、数据库连接等
-                    await current_node.clean_up()
+                    current_node.clean_up()
                     if self.current_node_id in self.hot_reloaded_nodes:
                         # 清空热更新节点列表
                         self.hot_reloaded_nodes = []
@@ -242,15 +239,9 @@ class Task:
             else:
                 self.logger.info(f"无下一个节点，任务执行完毕！")
         except Exception as e:
-            # self.logger.debug(f"任务执行异常：", exc_info=True)
             self.logger.exception(f"任务执行异常：")
             is_success = False
         finally:
-            # if self.task_tmpl.get("is_quit_browser_when_finished", True):
-            #     # self.logger.info(f"关闭Context")
-            #     await self.driver_manager.remove_user_driver(self.batch_no, self.username)
-            # else:
-            #     self.logger.info(f"任务执行完毕，不关闭当前用户的浏览器，请用户手动关闭！")
             self.logger.info(f"===== 任务【{task_name}】执行完成，状态：{'成功' if is_success else '失败'} =====")
         return is_success
 
@@ -282,9 +273,7 @@ class Task:
                 # if hasattr(target_task_node, "clean_up"):
                 #     target_task_node.clean_up()
             # 2.重新加载组件，创建新的组件实例
-            new_node_instance = get_event_loop_safely().run_until_complete(
-                self.create_node_instance(target_task_node.node_config)
-            )
+            new_node_instance = self.create_node_instance(target_task_node.node_config)
             # 3.复制属性
             ClazzUtils.copy_object_attributes(target_task_node, new_node_instance, False)
             # 3.重新注册节点

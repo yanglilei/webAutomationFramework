@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Union, Literal, Optional
 
-from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator, Frame
+from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 
@@ -22,24 +22,7 @@ class PlaywrightWebOperator:
         """辅助方法：获取当前活跃页面，确保不为None"""
         if not self._current_page or self._current_page.is_closed():
             self._current_page = self.context.pages[0] if self.context.pages else None
-        # if not self._current_page:
-        #     raise RuntimeError("无可用的页面/窗口")
         return self._current_page
-
-    # async def _convert_by_to_selector(self, by: str, selector: str) -> str:
-    #     """将Selenium的By类型转换为Playwright的selector格式"""
-    #     if by == By.XPATH:
-    #         return f"xpath={selector}"
-    #     elif by == By.CSS_SELECTOR:
-    #         return selector
-    #     elif by == By.ID:
-    #         return f"#{selector}"
-    #     elif by == By.NAME:
-    #         return f"[name='{selector}']"
-    #     elif by == By.CLASS_NAME:
-    #         return f".{selector}"
-    #     else:
-    #         raise ValueError(f"不支持的By类型：{by}")
 
     async def close_window(self, page: Page):
         if not self._is_window_closed(page):
@@ -186,7 +169,7 @@ class PlaywrightWebOperator:
         page = self.get_current_page()
         await page.goto(url, wait_until=wait_until)
 
-    async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator]=None):
+    async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator] = None):
         """
         执行js代码
         :param js_str: js代码
@@ -270,10 +253,12 @@ class PlaywrightWebOperator:
             pass
         return None if not ret or await ret.count() == 0 else ret
 
-    async def get_elem_with_wait_by_xpath(self, wait_time, xpath, visible=True, iframe:Optional[FrameLocator]=None) -> Locator:
+    async def get_elem_with_wait_by_xpath(self, wait_time, xpath, visible=True,
+                                          iframe: Optional[FrameLocator] = None) -> Locator:
         return await self.get_elem_with_wait(wait_time, f"xpath={xpath}", visible, iframe)
 
-    async def get_elem_with_wait_by_css(self, wait_time, css, visible=True, iframe:Optional[FrameLocator]=None) -> Locator:
+    async def get_elem_with_wait_by_css(self, wait_time, css, visible=True,
+                                        iframe: Optional[FrameLocator] = None) -> Locator:
         return await self.get_elem_with_wait(wait_time, css, visible, iframe)
 
     async def get_elems(self, locator, iframe=None) -> List[Locator]:

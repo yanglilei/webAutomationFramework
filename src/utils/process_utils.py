@@ -38,9 +38,9 @@ class ProcessUtils:
         chrome_procs = []
         for proc in all_child_procs:
             try:
-                # proc_name = proc.name().lower()
-                # if 'chrome.exe' in proc_name or 'chromedriver.exe' in proc_name:
-                chrome_procs.append(proc)
+                proc_name = proc.name().lower()
+                if 'chrome.exe' in proc_name or 'chromedriver.exe' in proc_name:
+                    chrome_procs.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         return chrome_procs
@@ -77,7 +77,7 @@ class ProcessUtils:
         # 2. 递归杀死每个 Chrome 进程的进程树
         for proc in chrome_procs:
             try:
-                cls._kill_process_tree(proc.pid)
+                cls.kill_process_tree(proc.pid)
                 logging.debug(f"清理应用内 Chrome 进程：PID={proc.pid}")
             except Exception as e:
                 logging.warning(f"清理进程 {proc.pid} 失败：{e}")
@@ -85,7 +85,7 @@ class ProcessUtils:
         logging.debug(f"共清理 {len(chrome_procs)} 个应用内 Chrome 残留进程")
 
     @classmethod
-    def _kill_process_tree(cls, pid: int):
+    def kill_process_tree(cls, pid: int):
         """递归杀死进程树（主进程 + 所有子进程）"""
         try:
             parent = psutil.Process(pid)

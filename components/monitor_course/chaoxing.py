@@ -9,7 +9,7 @@ from cozepy import MessageObjectString, Message
 from playwright.async_api import Locator, FrameLocator
 
 from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
-from src.frame.base.playwright_web_operator import PlaywrightWebOperator
+from src.frame.base.drissionpage_web_operator import DrissionPageWebOperator
 from src.utils.coze_api import AsyncCozeAgent
 from src.utils.qiniu_utils import FileOperatorResult, UploadFileOperator
 from src.utils.sys_path_utils import SysPathUtils
@@ -23,7 +23,7 @@ class ChaoXingExamHandler:
         需要先切换到任务点下的iframe
         :param web_operator: web_operator
         """
-        self.web_operator: PlaywrightWebOperator = web_operator
+        self.web_operator: DrissionPageWebOperator = web_operator
         self.username_showed = username_showed
         self.course_name = course_name
         self.content_name = content_name

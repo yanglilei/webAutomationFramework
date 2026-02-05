@@ -170,7 +170,10 @@ class ChromeProcessManager:
                 for pid in pid_tree:
                     if not self._kill_process(pid):
                         success = False
-                self._kill_process(parent_pid)
+
+                if parent_pid != self.app_main_pid:
+                    # 避免清理应用本身的进程
+                    self._kill_process(parent_pid)
             else:
                 logging.warning(f"批次[{batch_no}]父PID={parent_pid}无Chrome进程树可清理")
 

@@ -4,7 +4,7 @@ import os
 from abc import ABC, abstractmethod, ABCMeta
 from typing import Dict, Any, Tuple, Optional, Callable
 
-from src.frame.base.playwright_web_operator import PlaywrightWebOperator
+from src.frame.base.drissionpage_web_operator import DrissionPageWebOperator
 from src.frame.common.constants import NodeState, ControlCommand
 from src.utils import basic
 
@@ -48,7 +48,7 @@ class BaseNode(ABC):
         self.user_mode = self.task_config.get("batch_info", {}).get("user_mode")  # 用户模式。0-无用户 1-表格 2-文本
 
     @abstractmethod
-    async def execute(self, context: Dict) -> bool:
+    def execute(self, context: Dict) -> bool:
         """
         TODO 退出返回的参数需要丰富！不能仅仅是bool，否则外部容易搞懵逼！
         TODO pause by zcy 20250115!
@@ -172,7 +172,7 @@ class BaseNode(ABC):
         prev_node = self.get_prev_node()
         return prev_node.node_result.get("output_data") if prev_node else {}
 
-    async def clean_up(self):
+    def clean_up(self):
         """
         节点执行后的清理工作（可选实现）
         执行execute完毕后，框架会再次调用该方法执行清除的工作！
@@ -189,7 +189,7 @@ class BaseNode(ABC):
         """设置节点输出数据（供后续节点使用）"""
         self.node_result["output_data"][key] = value
 
-    async def validate_session(self) -> bool:
+    def validate_session(self) -> bool:
         """
         TODO 目前暂时无需用到
         会话有效性校验（可选实现，默认返回True）
@@ -217,12 +217,12 @@ class BaseNode(ABC):
         }
 
 
-class BasePYNode(BaseNode, PlaywrightWebOperator, metaclass=ABCMeta):
+class BasePYNode(BaseNode, DrissionPageWebOperator, metaclass=ABCMeta):
     """统一任务节点组件接口（所有组件均需实现该接口）"""
 
     def __init__(self, driver, user_manager, global_config: Dict, task_config: Dict, node_config: Dict,
                  user_config: Tuple, logger):
-        PlaywrightWebOperator.__init__(self, driver)
+        DrissionPageWebOperator.__init__(self, driver)
         BaseNode.__init__(self, user_manager, global_config, task_config, node_config, user_config, logger)
         self.username = self.user_config[0]  # 用户名
         self.password = self.user_config[1]  # 密码
@@ -237,7 +237,7 @@ class BasePYNode(BaseNode, PlaywrightWebOperator, metaclass=ABCMeta):
         pass
 
 
-class JSNode(BaseNode, PlaywrightWebOperator):
+class JSNode(BaseNode, DrissionPageWebOperator):
     """
     JS节点
     利用selenium执行的js代码如下：
@@ -276,15 +276,15 @@ class JSNode(BaseNode, PlaywrightWebOperator):
 
     def __init__(self, driver, user_manager, js_component_path: str, global_config: Dict,
                  task_config: Dict, node_config: Dict, user_config: Tuple, logger):
-        PlaywrightWebOperator.__init__(self, driver)
+        DrissionPageWebOperator.__init__(self, driver)
         BaseNode.__init__(self, user_manager, global_config, task_config, node_config, user_config, logger)
         self.js_component_path = js_component_path
 
-    async def execute(self, context: Dict) -> bool:
-        node_result = await self._execute_js_node()
+    def execute(self, context: Dict) -> bool:
+        node_result = self._execute_js_node()
         return node_result["is_success"]
 
-    async def _execute_js_node(self) -> Dict:
+    def _execute_js_node(self) -> Dict:
         """通过Selenium执行JS任务节点"""
         self.logger.info(f"开始执行JS节点：{os.path.basename(self.js_component_path)}")
         node_result = {
@@ -318,7 +318,7 @@ class JSNode(BaseNode, PlaywrightWebOperator):
                 return executeTaskNode(params);
             """
             # 执行JS并获取结果
-            js_node_result = await self.execute_js(js_exec_code)
+            js_node_result = self.execute_js(js_exec_code)
 
             # 4. 解析JS执行结果
             node_result["is_success"] = js_node_result.get("is_success", False)
