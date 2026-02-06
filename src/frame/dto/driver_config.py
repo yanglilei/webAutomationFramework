@@ -18,7 +18,7 @@ class DriverConfig:
     incognito_mode: str = "1"
     # 是否使用selenium-wire。1-使用selenium-wire；0-不使用selenium-wire
     is_selenium_wire: str = "0"
-    # 浏览器类型。0：chrome；1：edge
+    # 浏览器类型。0：chrome；1：firefox
     browser_type: str = "0"
     # 驱动位置
     driver_path: str = ""

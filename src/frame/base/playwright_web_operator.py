@@ -129,12 +129,16 @@ class PlaywrightWebOperator:
             self._current_page = window_handler
             await window_handler.bring_to_front()
 
-    async def switch_to_window(self, page):
+    async def get_windows_by_url_key(self, url_key: str):
+        return [window_handle for window_handle in self.get_windows() if url_key in window_handle.url]
+
+    async def switch_to_window(self, page, bring_to_front=True):
         if self._is_window_closed(page):
             return
             # raise ValueError("窗口已关闭")
         self._current_page = page
-        await page.bring_to_front()
+        if bring_to_front:
+            await page.bring_to_front()
 
     async def switch_to_latest_window(self):
         latest_window = self.get_latest_window()
@@ -207,7 +211,7 @@ class PlaywrightWebOperator:
         await new_page.goto("about:blank")
         self._current_page = new_page
 
-    async def format_video_time(self, time: str):
+    def format_video_time(self, time: str):
         # 纯字符串处理，逻辑不变
         ret = time
         if len(time) < 5:

@@ -20,7 +20,6 @@ class BaseMonitorCourseTaskNode(BasePYNode):
                  task_config: Dict[str, Any],
                  node_config: Dict[str, Any],
                  user_config: Tuple, logger):
-        super().__init__(driver, user_manager, global_config, task_config, node_config, user_config, logger)
         # 终止标志，通过设置该标志位，可中断轮询循环
         self.terminate_event = asyncio.Event()
         # 轮询间隔（秒）
@@ -34,6 +33,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
         self.stop_reason: str = "未启动"
         # 当前课程名称
         self.course_name: str = ""
+        super().__init__(driver, user_manager, global_config, task_config, node_config, user_config, logger)
 
     def set_up(self):
         self.poll_interval = int(self._get_config_value(

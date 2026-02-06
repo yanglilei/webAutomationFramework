@@ -28,9 +28,9 @@ CREATE TABLE IF NOT EXISTS tb_task_batch (
     global_config Text,  -- 全局配置
     batch_no VARCHAR(50) NOT NULL UNIQUE,  -- 唯一批次号（如B20260111001）
     action_id INTEGER,  -- 动作ID，用于标识是不是同时运行的，非常重要
-    total_user INTEGER,  -- 该批次总用户数
-    success_user INTEGER,  -- 执行成功的用户数
-    fail_user INTEGER,  -- 执行失败的用户数
+    total_user INTEGER not null default 0,  -- 该批次总用户数
+    success_user INTEGER not null default 0,  -- 执行成功的用户数
+    fail_user INTEGER not null default 0,  -- 执行失败的用户数
     remark TEXT DEFAULT '',  -- 备注信息
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -167,6 +167,24 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         # 4. 执行更新
         with self.get_db_connection() as conn:
             conn.execute(sql, params)
+
+    def add_one_success_user(self, batch_no: str):
+        record = self.get_by_batch_no(batch_no)
+        if not record:
+            raise BusinessException("任务批次不存在！")
+        sql = f"UPDATE tb_task_batch SET success_user=success_user+1, update_time = datetime('now', 'localtime') WHERE batch_no = ?"
+        # 4. 执行更新
+        with self.get_db_connection() as conn:
+            conn.execute(sql)
+
+    def add_one_fail_user(self, batch_no: str):
+        record = self.get_by_batch_no(batch_no)
+        if not record:
+            raise BusinessException("任务批次不存在！")
+        sql = f"UPDATE tb_task_batch SET fail_user=fail_user+1, update_time = datetime('now', 'localtime') WHERE batch_no = ?"
+        # 4. 执行更新
+        with self.get_db_connection() as conn:
+            conn.execute(sql)
 
     def update_by_batch_no(self, batch_no: str, update_info: Dict[str, Any]):
         """

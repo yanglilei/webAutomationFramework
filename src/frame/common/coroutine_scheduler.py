@@ -8,13 +8,15 @@ from shortuuid import ShortUUID
 from src.utils.async_utils import get_event_loop_safely
 
 # 定义回调函数的类型注解
-TaskCallback = Callable[[str, str, Any, Optional[Exception]], None]
+TaskCallback = Callable[[str, str, Any, Optional[Exception], Tuple, Dict], None]
 """
 回调函数签名要求：
 :param task_id: 任务ID
 :param status: 任务状态（pending/completed/failed/cancelled/not_found）
 :param result: 任务返回结果（失败/取消时为None）
 :param exception: 异常对象（成功时为None）
+:param args: tuple形参
+:param kwargs: dict形参
 """
 
 
@@ -47,19 +49,19 @@ class CoroutineScheduler:
         if callback not in self._callbacks[task_id]:
             self._callbacks[task_id].append(callback)
 
-    def _trigger_callbacks(self, task_id: str, status: str, result: Any, exc: Optional[Exception]):
+    def _trigger_callbacks(self, task_id: str, status: str, result: Any, exc: Optional[Exception], *args, **kwargs):
         """触发回调（异常隔离）"""
         # 触发全局回调
         for cb in self._global_callbacks:
             try:
-                cb(task_id, status, result, exc)
+                cb(task_id, status, result, exc, args, kwargs)
             except Exception as e:
                 logging.debug(f"全局回调执行失败（任务 {task_id}）: {e}")
         # 触发任务专属回调
         if task_id in self._callbacks:
             for cb in self._callbacks[task_id]:
                 try:
-                    cb(task_id, status, result, exc)
+                    cb(task_id, status, result, exc, args, kwargs)
                 except Exception as e:
                     logging.debug(f"任务 {task_id} 回调执行失败: {e}")
             del self._callbacks[task_id]
@@ -98,13 +100,13 @@ class CoroutineScheduler:
                     # 执行目标协程
                     result = await coro_func(*args, **kwargs)
                     self._results[task_id] = {"status": "completed", "result": result}
-                    self._trigger_callbacks(task_id, "completed", result, None)
+                    self._trigger_callbacks(task_id, "completed", result, None, *args, **kwargs)
                 except asyncio.CancelledError as e:
                     self._results[task_id] = {"status": "cancelled", "exception": e}
-                    self._trigger_callbacks(task_id, "cancelled", None, e)
+                    self._trigger_callbacks(task_id, "cancelled", None, e, *args, **kwargs)
                 except Exception as e:
                     self._results[task_id] = {"status": "failed", "exception": e}
-                    self._trigger_callbacks(task_id, "failed", None, e)
+                    self._trigger_callbacks(task_id, "failed", None, e, *args, **kwargs)
 
             # 直接创建任务（若需加入自定义TaskGroup，可扩展参数）
             task = tg.create_task(_wrapper())
@@ -148,13 +150,13 @@ class CoroutineScheduler:
                     try:
                         result = await func(*args, **kwargs)
                         self._results[task_id] = {"status": "completed", "result": result}
-                        self._trigger_callbacks(task_id, "completed", result, None)
+                        self._trigger_callbacks(task_id, "completed", result, None, *args, **kwargs)
                     except asyncio.CancelledError as e:
                         self._results[task_id] = {"status": "cancelled", "exception": e}
-                        self._trigger_callbacks(task_id, "cancelled", None, e)
+                        self._trigger_callbacks(task_id, "cancelled", None, e, *args, **kwargs)
                     except Exception as e:
                         self._results[task_id] = {"status": "failed", "exception": e}
-                        self._trigger_callbacks(task_id, "failed", None, e)
+                        self._trigger_callbacks(task_id, "failed", None, e, *args, **kwargs)
 
                 # 关键：用TaskGroup创建任务（自动加入管控）
                 task = tg.create_task(_task_wrapper(task_id, func, args, kwargs))

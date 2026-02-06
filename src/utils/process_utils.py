@@ -51,6 +51,22 @@ class ProcessUtils:
         精准获取当前 PyQt 应用启动的所有 Chrome 进程
         核心：只清理属于当前应用子进程树的 Chrome
         """
+        return cls.get_processes_by_names(app_pid, ['chrome.exe', 'chromedriver.exe'])
+
+    @classmethod
+    def get_app_firefox_processes(cls, app_pid: int) -> set[int]:
+        """
+        精准获取当前 PyQt 应用启动的所有 Chrome 进程
+        核心：只清理属于当前应用子进程树的 Chrome
+        """
+        return cls.get_processes_by_names(app_pid, ['firefox.exe'])
+
+    @classmethod
+    def get_processes_by_names(cls, app_pid: int, names: list[str]) -> set[int]:
+        """
+        精准获取当前 PyQt 应用启动的所有 Chrome 进程
+        核心：只清理属于当前应用子进程树的 Chrome
+        """
         # 1. 获取当前应用的所有子进程
         all_child_procs = cls._get_app_child_processes(app_pid)
         # 2. 筛选出 Chrome 进程
@@ -58,7 +74,7 @@ class ProcessUtils:
         for proc in all_child_procs:
             try:
                 proc_name = proc.name().lower()
-                if 'chrome.exe' in proc_name or 'chromedriver.exe' in proc_name:
+                if any([proc_name in name for name in names]):
                     chrome_procs.add(proc.pid)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue

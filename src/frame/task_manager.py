@@ -3,8 +3,9 @@ from typing import Dict, List
 
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
-from src.frame.common.chrome_process_manager import chrome_process_manager
 from src.frame.common.exceptions import BusinessException
+from src.frame.common.browser_process_manager import chrome_process_manager
+from src.frame.common.browser_process_manager import firefox_process_manager
 from src.frame.dao.db_manager import db
 from src.frame.task_batch_executor import TaskBatchExecutor
 
@@ -124,9 +125,10 @@ class TaskManager(QObject):
         """
         释放资源
         设计逻辑：
-        直接取消协程任务！让线程退出，回调all_task_batch_finished方法，设置TaskManager的is_running=False
-        外部的ResourceMonitor线程会死浏览器进程！
-        :param batch_nos: 任务批次号
+        1.取消目标批次的所有的协程任务，让线程退出！
+        若是最后一个批次，则会回调all_task_batch_finished方法，设置TaskManager的is_running=False
+        2.杀死目标批次的浏览器进程！
+        :param batch_nos: 任务批次号列表
         :return:
         """
         #### 关闭协程 ####
@@ -142,25 +144,20 @@ class TaskManager(QObject):
             else:  # 无指定批次为清除所有的资源
                 for coroutine_scheduler in task_batch_executor.coroutine_schedulers.values():
                     coroutine_scheduler.cancel()
-
-        #### 关闭浏览器 ####
+        #### 杀死浏览器进程 ####
         for batch_no in batch_nos:
+            # 杀死浏览器进程的操作
+            firefox_process_manager.clean_batch_processes(batch_no)
             chrome_process_manager.clean_batch_processes(batch_no)
 
-        # task_batches = db.task_batch_dao.get_by_batch_nos(batch_nos)
-        # for task_batch in task_batches:
-        #     task_tmpl = db.task_tmpl_dao.get_by_id(task_batch.get("task_tmpl_id"))
-        #     if not task_tmpl.get("is_quit_browser_when_finished"):
-        #         # 针对不能自动退出浏览器的任务，当手动点击释放资源时，需清理浏览器资源
-        #         chrome_process_manager.clean_batch_processes(task_batch.get("batch_no"))
         return "释放资源成功！"
 
-    def on_all_task_batch_finished(self, action_id: int, batch_nos: List[str], is_support_auto_free: bool):
+    def on_all_task_batch_finished(self, action_id: int, batch_nos: List[str], unreleased_batch_nos: set):
         """
         所有批次完成
         :param action_id: 动作ID
         :param batch_nos: 批次号列表
-        :param is_support_auto_free: 是否支持自动释放
+        :param unreleased_batch_nos: 未释放的批次
         :return:
         """
         # 移除任务批次
@@ -168,7 +165,7 @@ class TaskManager(QObject):
         self.logger.info(f"action_id={action_id} | 所有批次都执行完成！")
         if not self.task_batch_executors:
             self.logger.debug("所有任务批次完成！")
-            # 不支持自动释放，则设置is_running=True，只能手动
+            # 一个action的任务结束
             self.is_running = False
 
     def on_one_task_batch_finished(self, action_id: int, batch_no: str):

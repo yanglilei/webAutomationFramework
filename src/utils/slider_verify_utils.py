@@ -141,7 +141,9 @@ class SliderVerifyUtils:
         box = await btn_slider.bounding_box()
         start_x = box["x"]
         start_y = box["y"]
-        await btn_slider.hover()
+        await mouse.move(start_x+1, start_y+1)
+        # await btn_slider.hover(position={"x": 0.0, "y": 0.0})
+        # await mouse.move(start_x, start_y)
         await mouse.down()
         # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
         await asyncio.sleep(1) # 按住后停顿

@@ -111,18 +111,20 @@ class SMTEDULogin(BaseLoginTaskNode):
 
                 async with httpx.AsyncClient() as client:
                     img = await client.get(img_url, headers=headers)
-                LOG.info(f"用户【{self.username_showed}】下载图片验证码成功！")
-                with open(self.background_img_path, "wb") as f:
-                    f.write(img.content)
+                    LOG.info(f"用户【{self.username_showed}】下载图片验证码成功！")
+                    with open(self.background_img_path, "wb") as f:
+                        f.write(img.content)
 
                 btn_sliders = captcha_iframe.locator(".tc-fg-item")
                 btn_slider = None
                 for i in range(await btn_sliders.count()):
-                    btn_slider = btn_sliders.nth(i)
-                    box = await btn_slider.bounding_box()
+                    elem = btn_sliders.nth(i)
+                    box = await elem.bounding_box()
                     # start_x = box["x"] + box["width"] / 2
                     # start_y = box["y"] + box["height"] / 2
+                    # if await elem.is_visible() and "tc-slider-normal" in await elem.get_attribute("class"):
                     if 49<= int(box["width"]) <= 51:
+                        btn_slider = elem
                         break
                 if not btn_slider:
                     await captcha_iframe.locator("#e_reload").click()

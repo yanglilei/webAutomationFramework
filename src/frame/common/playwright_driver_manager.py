@@ -1,7 +1,10 @@
 # ./framework/driver_manager.py
 import asyncio
+import ctypes
+import math
 import threading
 import time
+from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
 
@@ -9,10 +12,16 @@ import psutil
 from playwright.async_api import BrowserContext, Playwright
 from playwright.async_api import async_playwright, Browser
 
+from src.frame.common.exceptions import ParamError
 from src.frame.common.playwright_stealth.stealth import Stealth
 from src.frame.dto.driver_config import DriverConfig
 from src.utils import basic, Md5Utils
 from src.utils.sys_path_utils import SysPathUtils
+
+
+class BrowserType(Enum):
+    CHROME = "chrome"
+    FIREFOX = "firefox"
 
 
 class WebDriverManager:
@@ -31,28 +40,9 @@ class WebDriverManager:
         # 协程锁
         self.lock = asyncio.Lock()
         self.logger = logger
-        # self._playwright = None
-        # self._browser: Optional[Browser] = None
         # 全局playwright（仅用于无痕模式）
         self._global_playwright: Optional[Playwright] = None
         self._global_browser: Optional[Browser] = None
-
-    async def _init_playwright(self):
-        """初始化Playwright上下文（全局唯一）"""
-        if self._playwright is None:
-            self._playwright = await async_playwright().start()
-
-    async def _init_browser(self, driver_config: DriverConfig):
-        if not self._browser:
-            # 1. 构建浏览器启动参数
-            launch_options = await self._set_launch_options(driver_config)
-            # 2. 启动浏览器（Chrome）
-            if driver_config.incognito_mode == "1":
-                self._browser = await self._playwright.chromium.launch(**launch_options)
-            else:
-                user_data_dir = Path(SysPathUtils.get_root_dir(), "userData")
-                self._browser = await self._playwright.chromium.launch_persistent_context(user_data_dir=user_data_dir,
-                                                                                          **launch_options)
 
     async def create_user_driver(self, username: str, batch_no: str, driver_config: DriverConfig) -> BrowserContext:
         """
@@ -62,7 +52,6 @@ class WebDriverManager:
         :param batch_no: 任务批次号
         :return: 用户专属Driver
         """
-        # TODO 思考是否需要加入batch_no，考虑是否支持释放某个批次和所有的资源！pause by zcy 20260126
         async with self.lock:  # 加锁保证线程安全
             key = (username, batch_no)
             # 若用户已存在Driver且处于运行状态，直接返回
@@ -75,38 +64,6 @@ class WebDriverManager:
             self.logger.info(f"批次 {batch_no} 创建Context成功！")
             return driver_info.get('context')
 
-    async def create_new_context_bak(self, driver_config: DriverConfig):
-        """
-        创建playwright的context
-        :param driver_config: 驱动配置信息
-        :return:
-        返回格式：{
-            'context': context,
-            'chrome_pid': '',
-            'monitor_thread': None,
-            'is_running': True
-        }
-        """
-        await self._init_playwright()
-        await self._init_browser(driver_config)
-        # 3. 构建上下文参数
-        context_options = await self._set_context_options(driver_config)
-        # 4. 创建浏览器上下文（支持多用户、无痕等）
-        context: BrowserContext = await self._browser.new_context(**context_options)
-        # 5.关键：为上下文绑定自动stealth
-        await self.setup_stealth_for_context(context)
-        # 5. 创建新页面（替代原 driver.get() 初始化）
-        await context.new_page()
-
-        # 封装用户Driver相关信息
-        driver_info = {
-            'context': context,
-            'chrome_pid': '',
-            'monitor_thread': None,
-            'is_running': True
-        }
-        return driver_info
-
     async def create_new_context(self, username: str, driver_config: DriverConfig) -> Dict[str, Any]:
         """
         创建playwright的context（区分无痕/非无痕模式）
@@ -115,49 +72,54 @@ class WebDriverManager:
         :return: driver_info字典
         """
         is_incognito = driver_config.incognito_mode == "1"
-        context: Optional[BrowserContext] = None
         chrome_pid = 0
-        playwright_instance: Optional[Playwright] = None
 
-        # 1. 构建启动参数
-        launch_options = await self._set_launch_options(driver_config)
+        if not driver_config.hook_port:
+            # 1. 构建启动参数
+            launch_options = await self._set_launch_options(driver_config)
+            context_options = await self._set_context_options(driver_config)
+            if is_incognito:
+                # 无痕模式：使用全局browser创建context
+                await self._init_global_playwright()
+                if not self._global_browser:
+                    bt = self._global_playwright.chromium if driver_config.browser_type == "0" else self._global_playwright.firefox
+                    self._global_browser = await bt.launch(**launch_options)
+                context = await self._global_browser.new_context(**context_options)
+                # 获取浏览器进程PID
+                # chrome_pid = self._global_browser.process.pid if self._global_browser.process else 0
+            else:
+                # 非无痕模式：创建持久化上下文
+                await self._init_global_playwright()
+                # 为每个用户创建独立的持久化目录
+                user_data_root = Path(SysPathUtils.get_root_dir(), "user_data")
+                user_data_dir = user_data_root / f"user_{Md5Utils.encrypt(username)}"
+                user_data_dir.mkdir(parents=True, exist_ok=True)
 
-        if is_incognito:
-            # 无痕模式：使用全局browser创建context
+                # 启动持久化浏览器（返回的是BrowserContext类型）
+                bt = self._global_playwright.chromium if driver_config.browser_type == "0" else self._global_playwright.firefox
+                context = await bt.launch_persistent_context(
+                    user_data_dir=str(user_data_dir),
+                    # user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+                    **launch_options,
+                    **context_options
+                )
+                # 获取进程PID，当前版本获取不到浏览器进程ID
+                # chrome_pid = context.browser.process.pid if context.browser and context.browser.process else 0
+
+            # 2. 应用stealth
+            await self.setup_stealth_for_context(context)
+            # 3. 非无痕模式下如果没有页面，才创建新页面（避免重复创建）
+            if not context.pages:
+                page = await context.new_page()
+        else:
+            # hook端口，只能支持cdp模式链接chrome，只能操作同一个浏览器，多用户用context隔离
+            if not driver_config.browser_type == "0":
+                raise ParamError("hook端口仅支持chrome，用cdp模式连接chrome")
+
             await self._init_global_playwright()
             if not self._global_browser:
-                self._global_browser = await self._global_playwright.chromium.launch(**launch_options)
-
-            # 创建无痕上下文
-            context_options = await self._set_context_options(driver_config)
-            context = await self._global_browser.new_context(**context_options)
-            # 获取浏览器进程PID
-            # chrome_pid = self._global_browser.process.pid if self._global_browser.process else 0
-        else:
-            # 非无痕模式：创建持久化上下文（每个用户独立）
-            playwright_instance = await async_playwright().start()
-
-            # 为每个用户创建独立的持久化目录
-            user_data_root = Path(SysPathUtils.get_root_dir(), "user_data")
-            user_data_dir = user_data_root / f"user_{Md5Utils.encrypt(username)}"
-            user_data_dir.mkdir(parents=True, exist_ok=True)
-
-            # 启动持久化浏览器（返回的是BrowserContext类型）
-            context = await playwright_instance.chromium.launch_persistent_context(
-                user_data_dir=str(user_data_dir),
-                # user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-                **launch_options,
-                **await self._set_context_options(driver_config)
-            )
-            # 获取进程PID
-            # chrome_pid = context.browser.process.pid if context.browser and context.browser.process else 0
-
-        # 2. 应用stealth
-        # await self.setup_stealth_for_context(context)
-
-        # 3. 非无痕模式下如果没有页面，才创建新页面（避免重复创建）
-        if not context.pages:
-            await context.new_page()
+                self._global_browser = await self._global_playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{driver_config.hook_port}")
+            context = await self._global_browser.new_context(**await self._set_context_options(driver_config))
 
         # 封装返回信息
         driver_info = {
@@ -166,7 +128,7 @@ class WebDriverManager:
             'monitor_thread': None,
             'is_running': True,
             'is_persistent': not is_incognito,
-            'playwright': playwright_instance  # 持久化模式保存playwright实例
+            'playwright': self._global_playwright  # 持久化模式保存playwright实例
         }
         return driver_info
 
@@ -189,22 +151,50 @@ class WebDriverManager:
         # 2. 绑定事件：所有通过该context新建的页面，都会自动执行apply_stealth
         context.on("page", apply_stealth)
 
-    async def close_bak(self):
-        if self._browser:
-            await self._browser.close()
-        if self._playwright:
-            await self._playwright.stop()
+    def get_screen_resolution(self):
+        """
+        获取适配Windows缩放比例的屏幕逻辑分辨率
+        解决150%/125%等缩放导致窗口超出屏幕的问题
+        """
+        # 获取Windows系统缩放比例（返回值为100/125/150等，单位：%）
+        user32 = ctypes.windll.user32
+        # 设置DPI感知，确保能获取真实缩放比例
+        user32.SetProcessDPIAware()
+
+        # 获取物理屏幕分辨率（像素）
+        physical_width = user32.GetSystemMetrics(0)
+        physical_height = user32.GetSystemMetrics(1)
+
+        # 获取缩放比例（如150%返回1.5）
+        hdc = user32.GetDC(0)
+        dpi_x = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # 水平DPI
+        user32.ReleaseDC(0, hdc)
+        scale_ratio = dpi_x / 96.0  # Windows默认DPI为96，缩放比例=实际DPI/96
+
+        # 计算适配缩放的逻辑分辨率（向下取整避免小数误差）
+        logical_width = math.floor(physical_width / scale_ratio)
+        logical_height = math.floor(physical_height / scale_ratio)
+
+        # print(f"系统缩放比例: {scale_ratio*100}%")
+        # print(f"物理分辨率: {physical_width}x{physical_height}")
+        # print(f"适配后的逻辑分辨率: {logical_width}x{logical_height}")
+
+        return logical_width, logical_height
 
     async def close(self):
         """关闭全局资源"""
-        # 先清理所有用户driver
-        await self.clear_all_drivers()
+        try:
+            # 先清理所有用户driver
+            await self.clear_all_drivers()
 
-        # 关闭全局browser和playwright
-        if self._global_browser:
-            await self._global_browser.close()
-        if self._global_playwright:
-            await self._global_playwright.stop()
+            # 关闭全局browser和playwright
+            if self._global_browser:
+                await self._global_browser.close()
+
+            if self._global_playwright:
+                await self._global_playwright.stop()
+        except:
+            self.logger.debug("关闭全局资源失败", exec_info=True)
 
     async def get_user_driver(self, username: str, batch_no: str) -> Optional[BrowserContext]:
         """获取用户专属Driver（仅返回运行中的Driver）"""
@@ -214,71 +204,68 @@ class WebDriverManager:
                 return driver_info['context']
             return None
 
-    async def _set_launch_options_bak(self, driver_config: DriverConfig) -> dict:
-        """
-        构建 Playwright 浏览器启动参数
-        :return: launch参数字典
-        """
+    async def _set_launch_options(self, driver_config: DriverConfig) -> dict:
+        """构建 Playwright 浏览器启动参数（自动区分无痕/非无痕模式参数）"""
+        is_incognito = driver_config.incognito_mode == "1"
+        # 1. 构建最终启动参数
+        args = []
         launch_options = {
-            "headless": driver_config.headless_mode == "1",  # Playwright 无头模式更简洁
-            "args": [
+            "headless": driver_config.headless_mode == "1",
+            "args": args,
+        }
+
+        common_args = []
+        if driver_config.browser_type == "0":
+            # 1. 通用参数（所有模式都生效）
+            common_args = [
                 "--lang=zh-CN",  # 语言设置
                 # 设置接受的语言优先级（中文第一，英文兜底）
                 "--accept-lang=zh-CN,zh;q=0.9,en;q=0.8",
                 # 禁用语言自动检测（可选，避免覆盖手动设置）
-                "--disable-features=TranslateUI,LanguageDetection"
+                "--disable-features=TranslateUI,LanguageDetection",
                 "--mute-audio",  # 静音
-                "--disable-gpu",  # 禁用GPU（兼容低配置）
                 "--start-maximized",  # 窗口最大化。配合context的no_viewport=True属性实现最大化
+                "--disable-popup-blocking",  # 禁用弹窗拦截（防止新窗口被拦截）
+                # 核心反检测（必须保留）
+                "--disable-blink-features=AutomationControlled",
+                # 通用兼容参数
+                # "--no-sandbox",
+                # "--disable-dev-shm-usage",
+                # "--disable-extensions",
+                # "--disable-web-security",
+                # "--ignore-certificate-errors",
+                # "--no-service-autorun",
+                # "--password-store=basic",
             ]
-        }
 
-        # 1. 配置Chrome可执行文件路径（替代原 chromedriver 路径）
-        if driver_config.browser_exe_position:
-            exe_path = driver_config.browser_exe_position
-            if not Path(exe_path).is_absolute():
-                exe_path = Path(SysPathUtils.get_root_dir(), exe_path)
-            if Path(exe_path).exists():
-                launch_options["executable_path"] = str(exe_path)
-            else:
-                raise ValueError(f"Chrome可执行文件不存在: {exe_path}")
+            if driver_config.headless_mode == "1":
+                common_args.extend(['--enable-gpu',
+                                    '--use-gl=angle',  # 或 'egl'、'desktop'
+                                    '--enable-webgl',
+                                    '--enable-accelerated-2d-canvas',
 
-        # 2. 调试端口（hook_port）
-        if driver_config.hook_port:
-            launch_options["args"].append(f"--remote-debugging-port={driver_config.hook_port}")
+                                    # 禁用软件渲染（强制使用 GPU）
+                                    '--disable-software-rasterizer',
 
-        # 3. 窗口大小（通过args传递，兼容原逻辑）
-        # width, height = pyautogui.size()
-        # launch_options["args"].append(f"--window-size={width},{height}")
+                                    # 解决无头模式下 GPU 兼容性问题
+                                    '--ignore-gpu-blocklist',
+                                    '--enable-features=VaapiVideoDecoder'])
 
-        return launch_options
+            # Chrome可执行文件路径（通用逻辑）
+            if driver_config.browser_exe_position:
+                exe_path = Path(driver_config.browser_exe_position)
+                if not exe_path.is_absolute():
+                    exe_path = Path(SysPathUtils.get_root_dir(), driver_config.browser_exe_position)
+                if exe_path.exists():
+                    launch_options["executable_path"] = str(exe_path)
+                else:
+                    raise ValueError(f"Chrome可执行文件不存在: {exe_path}")
 
-    async def _set_launch_options(self, driver_config: DriverConfig) -> dict:
-        """构建 Playwright 浏览器启动参数（自动区分无痕/非无痕模式参数）"""
-        is_incognito = driver_config.incognito_mode == "1"
-
-        # 1. 通用参数（所有模式都生效）
-        common_args = [
-            "--lang=zh-CN",  # 语言设置
-            # 设置接受的语言优先级（中文第一，英文兜底）
-            # "--accept-lang=zh-CN,zh;q=0.9,en;q=0.8",
-            # 禁用语言自动检测（可选，避免覆盖手动设置）
-            # "--disable-features=TranslateUI,LanguageDetection"
-            "--mute-audio",  # 静音
-            # "--disable-gpu",  # 禁用GPU（兼容低配置）
-            "--start-maximized",  # 窗口最大化。配合context的no_viewport=True属性实现最大化
-            "--disable-popup-blocking"  # 禁用弹窗拦截（防止新窗口被拦截）
-            # 核心反检测（必须保留）
-            # "--disable-blink-features=AutomationControlled",
-            # 通用兼容参数
-            # "--no-sandbox",
-            # "--disable-dev-shm-usage",
-            # "--disable-extensions",
-            # "--disable-web-security",
-            # "--ignore-certificate-errors",
-            # "--no-service-autorun",
-            # "--password-store=basic",
-        ]
+        elif driver_config.browser_type == "1":
+            # 1. 通用参数（所有模式都生效）
+            common_args = [
+                "--no-remote",  # 禁用远程调试进程
+            ]
 
         # 2. 仅非无痕模式生效的参数
         non_incognito_args = [
@@ -288,33 +275,36 @@ class WebDriverManager:
         ]
 
         # 3. 合并参数（根据模式自动筛选）
-        final_args = common_args
+        args.extend(common_args)
         if not is_incognito:
-            final_args.extend(non_incognito_args)
+            args.extend(non_incognito_args)
 
-        # 4. 构建最终启动参数
-        launch_options = {
-            "headless": driver_config.headless_mode == "1",
-            "args": final_args,
-            # 核心：禁用Playwright默认自动化参数（所有模式通用）
-            # "channel": "msedge",
-            "channel": "chrome",
-            # "ignore_default_args": ["--enable-automation"]
-        }
+        if driver_config.browser_type == "1":  # 火狐
+            launch_options["firefox_user_prefs"] = {
+                # 禁用所有音频输出
+                "media.volume_scale": "0.0",
+                # 禁用自动播放音频
+                # "media.autoplay.default": 5,
+                # "media.autoplay.blocking_policy": 2,
+                # 禁用WebAudio API（覆盖更多音频场景）
+                "dom.webaudio.enabled": False,
 
-        # Chrome可执行文件路径（通用逻辑）
-        if driver_config.browser_exe_position:
-            exe_path = Path(driver_config.browser_exe_position)
-            if not exe_path.is_absolute():
-                exe_path = Path(SysPathUtils.get_root_dir(), driver_config.browser_exe_position)
-            if exe_path.exists():
-                launch_options["executable_path"] = str(exe_path)
-            else:
-                raise ValueError(f"Chrome可执行文件不存在: {exe_path}")
+                # 禁用JIT编译器的一些优化（减少CPU波动）
+                "javascript.options.baselinejit": False,
+                # 禁用页面重绘优化（无头模式下不需要）
+                # "layout.frame_rate": 1,
+                # 禁用自动刷新和后台刷新
+                "browser.tabs.autorefresh": False,
+                # "network.http.speculative-parallel-limit": 1,  # 限制并行请求数
+                # 禁用缓存（可选，缓存会占用少量CPU，但如果需要复用页面可开启）
+                # "browser.cache.disk.enable": False,
+                # "browser.cache.memory.enable": False,
+            }
 
-        # 调试端口（通用逻辑）
-        if driver_config.hook_port:
-            launch_options["args"].append(f"--remote-debugging-port={driver_config.hook_port}")
+            launch_options["env"] = {
+                # "MOZ_DISABLE_CONTENT_PROCESS_SANDBOX": "1",  # 禁用沙箱（减少系统调用）
+                # "MOZ_SKIP_GLOBAL_SETUP": "1"  # 跳过全局初始化，减少启动开销
+            }
 
         return launch_options
 
@@ -324,16 +314,18 @@ class WebDriverManager:
         :return: context参数字典
         """
         context_options = {
-            # 语言设置
-            "locale": "zh-CN",
-            # 时区设置（可选，根据需要调整）
-            # "timezone_id": "Asia/Shanghai",
-            # 最大化窗口的配置
-            "no_viewport": True,
-            # "extra_http_headers": {
-            #     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"  # 对所有请求强制中文
-            # }
+            "java_script_enabled": True,  # 根据需求决定是否禁用JS
+            "locale": "zh-CN",  # 语言设置
+            "timezone_id": "Asia/Shanghai",  # 时区设置（可选，根据需要调整）
+            "permissions": ["geolocation"],  # 只授予必要权限
         }
+
+        if driver_config.browser_type == "0":  # chrome的窗口最大化配置
+            context_options["no_viewport"] = True
+        else:  # 火狐的窗口最大化
+            screen_width, screen_height = self.get_screen_resolution()
+            context_options["viewport"] = {"width": screen_width, "height": screen_height}
+
         return context_options
 
     async def remove_user_driver(self, batch_no: Optional[str] = None, username: Optional[str] = None):
@@ -416,45 +408,6 @@ class WebDriverManager:
         monitor_thread.start()
         self.logger.info(f"浏览器监控线程已启动")
 
-    def is_empty(self) -> bool:
-        """判断驱动是否为空"""
-        return not self.user_driver_map
-
-    # def batch_nos(self) -> List[str]:
-    #     """获取所有批次号"""
-    #
-    #     return [key[1] for key in self.user_driver_map.keys()]
-
-    async def _cleanup_driver_bak(self, key: Tuple[str, str]):
-        """内部方法：清理单个用户的Driver资源（关闭Driver、终止进程、停止监控）"""
-        driver_info = self.user_driver_map.get(key)
-        if not driver_info:
-            return
-        username = key[0]
-        # 标记为停止运行（防止监控线程继续执行）
-        driver_info['is_running'] = False
-        # 1. 关闭Driver
-        context: BrowserContext = driver_info.get('context')
-        if context:
-            try:
-                await context.close()
-                self.logger.info(f"Context已正常退出")
-            except Exception:
-                self.logger.warning(f"Context正常退出失败，尝试强制终止进程")
-
-        # 2. 强制终止chromedriver进程
-        # driver_service = driver_info.get('driver_service')
-        # if driver_service and driver_service.process:
-        #     try:
-        #         driver_service.process.terminate()
-        #         self.logger.info(f"用户[{basic.mask_username(username)}]的ChromeDriver进程已强制终止")
-        #     except Exception:
-        #         self.logger.warning(f"用户[{basic.mask_username(username)}]的ChromeDriver进程强制终止失败")
-
-        # 3. 移除用户映射（最后操作，避免监控线程重复处理）
-        self.user_driver_map.pop(key)
-        self.logger.info(f"Context映射已移除，资源清理完成")
-
     async def _cleanup_driver(self, key: Tuple[str, str]):
         """清理单个用户的Driver资源"""
         driver_info = self.user_driver_map.get(key)
@@ -477,14 +430,14 @@ class WebDriverManager:
                 self.logger.warning(f"Context关闭失败: {str(e)}")
 
         # 2. 停止持久化模式的playwright实例
-        if driver_info.get('is_persistent'):
-            playwright_instance = driver_info.get('playwright')
-            if playwright_instance:
-                try:
-                    await playwright_instance.stop()
-                    self.logger.debug(f"Playwright实例已停止")
-                except Exception as e:
-                    self.logger.warning(f"Playwright实例停止失败: {str(e)}")
+        # if driver_info.get('is_persistent'):
+        #     playwright_instance = driver_info.get('playwright')
+        #     if playwright_instance:
+        #         try:
+        #             await playwright_instance.stop()
+        #             self.logger.debug(f"Playwright实例已停止")
+        #         except Exception as e:
+        #             self.logger.warning(f"Playwright实例停止失败: {str(e)}")
 
         # 3. 终止浏览器进程（兜底）
         # chrome_pid = driver_info.get('chrome_pid')
@@ -673,6 +626,7 @@ class WebDriverManagerBak:
             "--disable-logging",  # 禁用Chrome日志
             "--disable-v8-idle-tasks",  # 禁用V8引擎的空闲任务，减少CPU空转
         ]
+        common_args = []
 
         # 2. 仅非无痕模式生效的参数
         non_incognito_args = [
