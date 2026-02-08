@@ -182,7 +182,7 @@ class TaskBatchExecutor(QThread):
             self.logger.info(f"任务批次号：{batch_no} | 用户任务执行完成，状态：取消")
             self.db.task_batch_dao.add_one_fail_user(batch_no)
         else:  # 异常
-            self.logger.debug(f"任务批次号：{batch_no} | 用户任务执行完成，状态：异常", exec_info=exc)
+            self.logger.debug(f"任务批次号：{batch_no} | 用户任务执行完成，状态：异常，原因：{str(exc)}")
             self.logger.info(f"任务批次号：{batch_no} | 用户任务执行完成，状态：异常，原因：{str(exc)}")
             self.db.task_batch_dao.add_one_fail_user(batch_no)
 

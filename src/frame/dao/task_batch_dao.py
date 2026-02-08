@@ -175,7 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         sql = f"UPDATE tb_task_batch SET success_user=success_user+1, update_time = datetime('now', 'localtime') WHERE batch_no = ?"
         # 4. 执行更新
         with self.get_db_connection() as conn:
-            conn.execute(sql)
+            conn.execute(sql, [batch_no])
 
     def add_one_fail_user(self, batch_no: str):
         record = self.get_by_batch_no(batch_no)
@@ -184,7 +184,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         sql = f"UPDATE tb_task_batch SET fail_user=fail_user+1, update_time = datetime('now', 'localtime') WHERE batch_no = ?"
         # 4. 执行更新
         with self.get_db_connection() as conn:
-            conn.execute(sql)
+            conn.execute(sql, [batch_no])
 
     def update_by_batch_no(self, batch_no: str, update_info: Dict[str, Any]):
         """

@@ -242,7 +242,6 @@ class Task:
             else:
                 self.logger.info(f"无下一个节点，任务执行完毕！")
         except Exception as e:
-            # self.logger.debug(f"任务执行异常：", exc_info=True)
             self.logger.exception(f"任务执行异常：")
             is_success = False
         finally:
@@ -282,9 +281,7 @@ class Task:
                 # if hasattr(target_task_node, "clean_up"):
                 #     target_task_node.clean_up()
             # 2.重新加载组件，创建新的组件实例
-            new_node_instance = get_event_loop_safely().run_until_complete(
-                self.create_node_instance(target_task_node.node_config)
-            )
+            new_node_instance = self.create_node_instance(target_task_node.node_config)
             # 3.复制属性
             ClazzUtils.copy_object_attributes(target_task_node, new_node_instance, False)
             # 3.重新注册节点
@@ -294,7 +291,7 @@ class Task:
             self.logger.info(f"任务【{self.task_uuid}】节点【{target_task_node.node_name}】热更新成功")
 
     def get_node(self, node_id: int) -> Optional[BaseNode]:
-        """
+        """52
         获取任务内指定节点
         :param node_id: 节点ID
         """

@@ -235,7 +235,9 @@ class AutoModePage(BaseTabWidget):
                       "priority": 5,  # 默认值为5
                       "queue_time": datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S"),
                       "execute_status": 0,
-                      "batch_no": batch_no_utils.generate_batch_number("-")
+                      "batch_no": batch_no_utils.generate_batch_number("-"),
+                      "fail_user": 0,
+                      "success_user": 0
                       }
 
             records.append(record)

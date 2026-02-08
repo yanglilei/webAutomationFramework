@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import Tuple
 
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed, RetryCallState
@@ -36,7 +37,9 @@ class PEPLogin(BaseLoginTaskNode):
             return False, "密码输入框找不到"
 
         await username_input.fill(username)
+        await asyncio.sleep(random.uniform(0.5, 2.5))
         await password_input.fill(password)
+        await asyncio.sleep(random.uniform(0.5, 2.5))
 
         login_btn = await self.get_elem_with_wait(2, "//form[@name='loginForm']//img[@id='imgLogin']")
         if not login_btn:
@@ -64,10 +67,10 @@ class PEPLogin(BaseLoginTaskNode):
                 # 验证码不正确
                 self.logger.error("验证码不正确！")
                 raise BusinessException("验证码不正确！")
-            elif "px/index" in await self.get_current_url():
+            elif "px/index" in await self.get_current_url() or not await fail_tips.text_content():
                 return True, "登录成功"
             else:
-                self.logger.error(f"登录失败：{await fail_tips.text_content()}")
-                return False, f"登录失败：{await fail_tips.text_content()}"
+                self.logger.error(f"{await fail_tips.text_content()}")
+                return False, f"{await fail_tips.text_content()}"
         else:
             return True, "登录成功"

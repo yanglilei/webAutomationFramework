@@ -1,8 +1,8 @@
+import logging
 from pathlib import Path
-from typing import List, Union, Literal, Optional
+from typing import List, Literal, Optional, Callable
 
-from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator, Frame
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator
 
 
 class PlaywrightWebOperator:
@@ -19,7 +19,9 @@ class PlaywrightWebOperator:
         self._current_frame = None
 
     def get_current_page(self) -> Page:
-        """辅助方法：获取当前活跃页面，确保不为None"""
+        """
+        获取当前活跃页面，确保不为None
+        """
         if not self._current_page or self._current_page.is_closed():
             self._current_page = self.context.pages[0] if self.context.pages else None
         # if not self._current_page:
@@ -42,30 +44,62 @@ class PlaywrightWebOperator:
     #         raise ValueError(f"不支持的By类型：{by}")
 
     async def close_window(self, page: Page):
+        """
+        关闭页面
+        :param page: 页面对象
+        :return:
+        """
         if not self._is_window_closed(page):
-            self._current_page = page
             await page.close()
+            # 当前页面为none，避免当前页面被关了，而对象中还保留了旧的页面对象
+            self._current_page = None
 
     async def close_latest_window(self):
+        """
+        关闭最新打开的页面
+        :return:
+        """
         await self.close_window(self.get_latest_window())
 
     def get_windows(self):
+        """
+        获取所有打开的页面
+        :return:
+        """
         # 返回所有未关闭的Page（对应Selenium的window_handles）
         return [page for page in self.context.pages if not page.is_closed()]
 
     def get_latest_window(self):
+        """
+        获取最新打开的页面
+        :return:
+        """
         windows = self.get_windows()
         return None if not windows else windows[-1]
 
     def _is_window_closed(self, window_handle: Page):
-        # 判断Page是否已关闭
+        """
+        判断页面是否已关闭
+        :param window_handle: 页面句柄
+        :return:
+        """
         return window_handle not in self.context.pages or window_handle.is_closed()
 
     async def refresh(self):
+        """
+        刷新当前页面
+        :return:
+        """
         page = self.get_current_page()
         await page.reload()
 
     async def cookie_to_str(self, page=None):
+        """
+        将Cookie转为字符串
+        格式：a=b;c=d;...
+        :param page:
+        :return:
+        """
         cookies: List[dict] = await self.get_cookies(page)  # Playwright从Context获取Cookies
         return "".join(["%s=%s;" % (cookie["name"], cookie["value"]) for cookie in cookies])[0:-1] if cookies else ""
 
@@ -101,10 +135,19 @@ class PlaywrightWebOperator:
             return []
 
     async def user_agent(self):
+        """
+        获取当前页面的User-Agent
+        :return:
+        """
         page = self.get_current_page()
         return await page.evaluate("navigator.userAgent")
 
     async def close_other_windows(self, cur_window_handle):
+        """
+        关闭其他窗口
+        :param cur_window_handle: 当前窗口句柄
+        :return:
+        """
         if self._is_window_closed(cur_window_handle):
             # raise ValueError("当前窗口已关闭")
             return
@@ -116,6 +159,12 @@ class PlaywrightWebOperator:
         await cur_window_handle.bring_to_front()
 
     async def switch_to_window_by_url_key(self, value):
+        """
+        根据url_key获取窗口
+        :param value: url_key
+        :return:
+        """
+
         async def _switch_to_window_by_url_key(value):
             for window_handle in self.get_windows():
                 self._current_page = window_handle
@@ -129,10 +178,33 @@ class PlaywrightWebOperator:
             self._current_page = window_handler
             await window_handler.bring_to_front()
 
-    async def get_windows_by_url_key(self, url_key: str):
-        return [window_handle for window_handle in self.get_windows() if url_key in window_handle.url]
+    async def get_windows_by_url_key(self, url_key: str, is_support_fuzzy=True):
+        """
+        根据url_key获取窗口
+        :param url_key: url关键字
+        :param is_support_fuzzy: 是否支持模糊匹配
+        :return:
+        """
+        windows = []
+        for window_handle in self.get_windows():
+            if is_support_fuzzy:
+                if url_key in window_handle.url:
+                    windows.append(window_handle)
+            else:
+                if url_key == window_handle.url:
+                    windows.append(window_handle)
 
-    async def switch_to_window(self, page, bring_to_front=True):
+        return windows
+
+    async def switch_to_window(self, page: Page, bring_to_front=True):
+        """
+        切换窗口
+        :param page: 页面
+        :param bring_to_front: 是否切换到最前面
+        :return:
+        """
+        if not page:
+            return
         if self._is_window_closed(page):
             return
             # raise ValueError("窗口已关闭")
@@ -141,10 +213,14 @@ class PlaywrightWebOperator:
             await page.bring_to_front()
 
     async def switch_to_latest_window(self):
+        """
+        切换到最新窗口
+        :return:
+        """
         latest_window = self.get_latest_window()
         await self.switch_to_window(latest_window)
 
-    def switch_to_frame(self, frame_reference: str, locator: Locator | FrameLocator = None) -> FrameLocator:
+    def switch_to_frame(self, frame_reference: str, selector: Locator | FrameLocator = None) -> FrameLocator:
         """
         获取iframe
         返回FrameLocator实例
@@ -153,30 +229,25 @@ class PlaywrightWebOperator:
         :return:
         """
         # FrameLocator 是惰性求值的 iframe 定位器，创建后可直接定位 iframe 内部元素，无需 “显式进入 / 退出”，逻辑最简洁，适配动态加载的 iframe。
-        if not locator:
-            current_page = self.get_current_page()
-            frame = current_page.frame_locator(frame_reference).first
-        else:
-            frame = locator.frame_locator(frame_reference).first
+        locator = self.get_current_page() if not selector else selector
+        frame = locator.frame_locator(frame_reference)
         self._current_frame = frame
         return self._current_frame
 
-    # async def get_frame(self, iframe_name: str=None, iframe_url: str=None) -> Frame:
-    #     current_page = self.get_current_page()
-    #     frame = current_page.frame(name=iframe_name, url=iframe_url)
-    #     return frame
-
-    # async def switch_to_default_content(self):
-    #     # 回到主frame
-    #     self._current_frame = None
-    #     self._get_current_page().main_frame
-
     async def go_back(self):
+        """
+        返回上一页
+        :return:
+        """
         page = self.get_current_page()
         await page.go_back()
 
     async def open_in_new_window(self, url):
-        # 新建Page（窗口）并打开URL
+        """
+        新建Page（窗口）并打开URL
+        :param url: url地址
+        :return:
+        """
         new_page = await self.context.new_page()
         await new_page.goto(url)
         self._current_page = new_page
@@ -187,10 +258,16 @@ class PlaywrightWebOperator:
         await self.context.browser.close()
 
     async def load_url(self, url, wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"):
+        """
+        加载指定url
+        :param url: url
+        :param wait_until: 等待条件，可选值：commit, domcontentloaded, load, networkidle
+        :return:
+        """
         page = self.get_current_page()
         await page.goto(url, wait_until=wait_until)
 
-    async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator]=None):
+    async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator] = None):
         """
         执行js代码
         :param js_str: js代码
@@ -203,10 +280,19 @@ class PlaywrightWebOperator:
         return await locator.evaluate(js_str, arg)
 
     async def js_click(self, locator: Locator):
+        """
+        js点击元素
+        :param locator: Locator元素
+        :return:
+        """
         await locator.evaluate("elem => elem.click();")
         # await self.execute_js("elem => elem.click();", locator=locator)
 
     async def open_blank_tab(self):
+        """
+        打开空白tab
+        :return:
+        """
         new_page = await self.context.new_page()
         await new_page.goto("about:blank")
         self._current_page = new_page
@@ -223,6 +309,13 @@ class PlaywrightWebOperator:
         return ret
 
     async def screenshot(self, path: Optional[str | Path] = None, element: Optional[Locator] = None) -> bytes:
+        """
+        截图
+        支持元素和当前页面截图
+        :param path: 保存路径
+        :param element: 元素，不为空则截图该元素
+        :return:
+        """
         if not element:
             page = self.get_current_page()
             return await page.screenshot(path=path, full_page=True)
@@ -230,6 +323,11 @@ class PlaywrightWebOperator:
             return await element.screenshot(path=path)
 
     async def get_current_url(self, page=None):
+        """
+        获取当前页面的url
+        :param page:
+        :return:
+        """
         ret = ""
         if not page:
             page = self.get_current_page()
@@ -251,232 +349,387 @@ class PlaywrightWebOperator:
             }}
             """, video_css)
 
-    async def get_elem_with_wait(self, wait_time, locator, visible=True,
-                                 iframe: Locator | FrameLocator = None) -> Locator:
+    async def get_elem_with_wait(self, wait_time: float, selector, visible=True,
+                                 iframe: Locator | FrameLocator = None) -> Optional[Locator]:
         """
         延迟获取元素
         :param wait_time:等待时间
-        :param locator: 符合playwright的locator格式
+        :param selector: 符合playwright的locator格式
         :param visible: True-等待可见，False-等待存在
         :param iframe: Locator or FrameLocator实例，不传默认在page下查找，否则在该Locator下查找
         :return: Playwright Locator对象（兼容原WebElement）
         """
-        page = self.get_current_page()
-        ret = None
+        context = self.get_current_page() if not iframe else iframe
         try:
-            if not iframe:
-                ret = page.locator(locator)  # 先创建Locator（惰性，不立即查DOM）
-            else:
-                ret = iframe.locator(locator)
-            # 等待该Locator对应的元素可见，超时时间和原代码一致
-            await ret.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
+            locator = context.locator(selector)
+            await locator.first.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
+            return None if await locator.count() == 0 else locator.first
         except Exception:
-            pass
-        return None if not ret or await ret.count() == 0 else ret
+            return None
 
-    async def get_elem_with_wait_by_xpath(self, wait_time, xpath, visible=True, iframe:Optional[FrameLocator]=None) -> Locator:
+    async def get_elem_with_wait_by_xpath(self, wait_time: float, xpath: str, visible=True,
+                                          iframe: Optional[FrameLocator] = None) -> Locator:
+        """
+        等待获取元素
+        :param wait_time:等待时间
+        :param xpath: xpath表达式
+        :param visible: True-可见，False-存在
+        :param iframe: Locator or FrameLocator实例，不传默认在page下查找，否则在该Locator下查找
+        :return: Playwright Locator对象（兼容原WebElement）
+        """
         return await self.get_elem_with_wait(wait_time, f"xpath={xpath}", visible, iframe)
 
-    async def get_elem_with_wait_by_css(self, wait_time, css, visible=True, iframe:Optional[FrameLocator]=None) -> Locator:
+    async def get_elem_with_wait_by_css(self, wait_time: float, css: str, visible=True,
+                                        iframe: Optional[FrameLocator] = None) -> Locator:
+        """
+        等待获取元素
+        :param wait_time:等待时间
+        :param css: css表达式
+        :param visible: True-可见，False-存在
+        :param iframe: Locator or FrameLocator实例，不传默认在page下查找，否则在该Locator下查找
+        :return: Playwright Locator对象（兼容原WebElement）
+        """
         return await self.get_elem_with_wait(wait_time, css, visible, iframe)
 
-    async def get_elems(self, locator, iframe=None) -> List[Locator]:
-        ret = await self.get_elem(locator, iframe)
-        return await ret.all() if ret else []
+    async def get_elems(self, selector, iframe=None) -> List[Locator]:
+        context = self.get_current_page() if not iframe else iframe
+        try:
+            locator = context.locator(selector)
+            return await locator.all()
+        except:
+            return []
 
-    async def get_elems_by_xpath(self, xpath, iframe=None) -> List[Locator]:
+    async def get_elems_by_xpath(self, xpath: str, iframe=None) -> List[Locator]:
+        """
+        获取多个元素
+        :param xpath: xpath表达式
+        :param iframe: iframe表达式
+        :return: Locator列表
+        """
         return await self.get_elems(f"xpath={xpath}", iframe)
 
-    async def get_elems_by_css(self, css, iframe=None) -> List[Locator]:
+    async def get_elems_by_css(self, css: str, iframe=None) -> List[Locator]:
+        """
+        获取多个元素
+        :param css: css表达式
+        :param iframe: iframe表达式
+        :return: Locator列表
+        """
         return await self.get_elems(css, iframe)
 
-    async def get_elems_with_wait(self, wait_secs, locator, visible=True, iframe=None) -> List[Locator]:
-        page = self.get_current_page()
-        ret: List[Locator] = []
-        # by, selector = locator
-        # pw_selector = self._convert_by_to_selector(by, selector)
-        timeout = wait_secs * 1000
+    async def get_elems_with_wait(self, timeout: float, selector: str, visible=True, iframe=None) -> List[Locator]:
+        context = self.get_current_page() if not iframe else iframe
         try:
-            if not iframe:
-                await page.wait_for_selector(locator, state="visible" if visible else "attached", timeout=timeout)
-            else:
-                await iframe.wait_for_selector(locator, state="visible" if visible else "attached", timeout=timeout)
-            ret = await page.locator(locator).all()
-        except PlaywrightTimeoutError:
-            pass
-        return ret
+            locator = context.locator(selector)
+            await locator.first.wait_for(timeout=timeout * 1000, state="visible" if visible else "attached")
+            return await locator.all()
+        except Exception as e:
+            logging.exception("获取元素失败：")
+            return []
 
-    async def get_elems_with_wait_by_xpath(self, wait_secs, xpath, visible=True, iframe=None) -> List[Locator]:
-        return await self.get_elems_with_wait(wait_secs, f"xpath={xpath}", visible, iframe)
+    async def get_elems_with_wait_by_xpath(self, timeout: float, xpath: str, visible=True, iframe=None) -> List[
+        Locator]:
+        """
+        等待获取多个元素
+        当第一个元素“可见”或“存在”的时候就返回，不等待所有的元素“可见”或“存在”
+        :param timeout: 等待时间，秒
+        :param xpath: xpath表达式
+        :param visible: True-可见；False-存在
+        :param iframe: iframe表达式
+        :return: Locator列表
+        """
+        return await self.get_elems_with_wait(timeout, f"xpath={xpath}", visible, iframe)
 
-    async def get_elems_with_wait_by_css(self, wait_secs, css, visible=True, iframe=None) -> List[Locator]:
-        return await self.get_elems_with_wait(wait_secs, css, visible, iframe)
+    async def get_elems_with_wait_by_css(self, timeout: float, css: str, visible=True, iframe=None) -> List[Locator]:
+        """
+        等待获取多个元素
+        当第一个元素“可见”或“存在”的时候就返回，不等待所有的元素“可见”或“存在”
+        :param timeout: 等待时间，秒
+        :param css: css表达式
+        :param visible: True-可见；False-存在
+        :param iframe: iframe表达式
+        :return: Locator列表
+        """
+        return await self.get_elems_with_wait(timeout, css, visible, iframe)
 
-    async def get_elem(self, locator, iframe=None) -> Locator:
-        page = self.get_current_page()
-        ret: Optional[Locator] = None
+    async def get_elem(self, selector, iframe=None) -> Optional[Locator]:
+        context = self.get_current_page() if not iframe else iframe
         try:
-            if not iframe:
-                ret = page.locator(locator)
-            else:
-                ret = iframe.locator(locator)
+            locator = context.locator(selector)
+            return locator.first if await locator.count() > 0 else None
         except Exception:
-            pass
-        return None if await ret.count() == 0 else ret
+            return None
 
-    async def get_elem_by_xpath(self, xpath, iframe=None) -> Locator:
+    async def get_elem_by_xpath(self, xpath: str, iframe=None) -> Optional[Locator]:
+        """
+        获取一个元素
+        - 没有元素返回False
+        - 存在元素返回元素本身
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
         return await self.get_elem(f"xpath={xpath}", iframe)
 
-    async def get_elem_by_css(self, css) -> Locator:
-        return await self.get_elem(css)
+    async def get_elem_by_css(self, css: str, iframe=None) -> Optional[Locator]:
+        """
+        获取一个元素
+        - 没有元素返回False
+        - 存在元素返回元素本身
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.get_elem(css, iframe)
 
-    def get_relative_elem(self, elem: Locator, locator) -> Locator:
-        ret: Optional[Locator] = None
+    async def get_relative_elem(self, elem: Locator, locator: str) -> Optional[Locator]:
         try:
             ret = elem.locator(locator)
+            return None if await ret.count() == 0 else ret.first
         except Exception:
-            pass
-        return ret
+            return None
 
-    def get_relative_elem_by_xpath(self, elem: Locator, xpath) -> Locator:
-        return self.get_relative_elem(elem, f"xpath={xpath}")
+    async def get_relative_elem_by_xpath(self, elem: Locator, xpath: str) -> Optional[Locator]:
+        """
+        获取一个相对 elem 的元素
+        - 没有元素返回False
+        - 存在元素返回元素本身
+        :param elem: 元素
+        :param xpath: xpath表达式
+        :return:
+        """
+        return await self.get_relative_elem(elem, f"xpath={xpath}")
 
-    def get_relative_elem_by_css(self, elem: Locator, css) -> Locator:
-        return self.get_relative_elem(elem, css)
+    async def get_relative_elem_by_css(self, elem: Locator, css: str) -> Optional[Locator]:
+        """
+        获取一个相对 elem 的元素
+        - 没有元素返回False
+        - 存在元素返回元素本身
+        :param elem: 元素
+        :param css: css表达式
+        :return:
+        """
+        return await self.get_relative_elem(elem, css)
 
-    async def get_relative_elems(self, elem: Locator, locator) -> List[Locator]:
-        ret: List[Locator] = []
+    async def get_relative_elems(self, elem: Locator, locator: str) -> List[Locator]:
         try:
-            locator = elem.locator(locator)
-            ret = await locator.all()
+            return await elem.locator(locator).all()
         except Exception:
-            pass
-        return ret
+            return []
 
-    async def get_relative_elems_by_xpath(self, elem: Locator, xpath) -> List[Locator]:
+    async def get_relative_elems_by_xpath(self, elem: Locator, xpath: str) -> List[Locator]:
+        """
+        获取多个相对 elem 的元素
+        :param elem: 元素
+        :param xpath: xpath表达式
+        :return: Locator列表
+        """
         return await self.get_relative_elems(elem, f"xpath={xpath}")
 
-    async def get_relative_elems_by_css(self, elem: Locator, css) -> List[Locator]:
+    async def get_relative_elems_by_css(self, elem: Locator, css: str) -> List[Locator]:
+        """
+        获取多个相对 elem 的元素
+        :param elem: 元素
+        :param css: css表达式
+        :return: Locator列表
+        """
         return await self.get_relative_elems(elem, css)
 
-    async def is_elem_visible(self, locator, iframe=None) -> Union[Locator, bool]:
-        page = self.get_current_page()
-        ret = False
+    async def is_elem_visible(self, locator: str, iframe=None) -> Locator | bool:
+        context = self.get_current_page() if not iframe else iframe
         try:
-            if not iframe:
-                ret = await page.locator(locator).is_visible()
-            else:
-                ret = await iframe.locator(locator).is_visible()
-            if ret:
-                ret = page.locator(locator)
-        except Exception:
-            ret = False
-        return ret
+            locator = context.locator(locator)
+            return False if not await locator.is_visible() else locator.first
+        except:
+            return False
 
-    async def is_elem_visible_by_xpath(self, xpath, iframe=None):
+    async def is_elem_visible_by_xpath(self, xpath: str, iframe=None) -> Locator | bool:
+        """
+        瞬时判断元素是否可见：
+        - 元素可见 → 返回第一个匹配的元素 Locator
+        - 元素不可见/不存在/异常 → 返回 False
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
         return await self.is_elem_visible(f"xpath={xpath}", iframe)
 
-    async def is_elem_visible_by_css(self, css):
+    async def is_elem_visible_by_css(self, css: str, iframe=None) -> Locator | bool:
+        """
+        瞬时判断元素是否可见：
+        - 元素可见 → 返回第一个匹配的元素 Locator
+        - 元素不可见/不存在/异常 → 返回 False
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
         # 修复原代码笔误（原调用了is_elem_exists）
-        return await self.is_elem_visible(css)
+        return await self.is_elem_visible(css, iframe)
 
-    async def is_elem_exists(self, locator):
-        page = self.get_current_page()
-        ret = False
+    async def is_elem_exists(self, selector: str, iframe=None) -> bool:
+        context = self.get_current_page() if not iframe else iframe
         try:
-            ret = page.locator(locator)
-            if await ret.count() == 0:
-                ret = False
-        except Exception:
-            ret = False
-        return ret
+            ret = context.locator(selector)
+            return False if await ret.count() == 0 else True
+        except:
+            return False
 
-    async def is_elem_exists_by_xpath(self, xpath):
-        return await self.is_elem_exists(f"xpath={xpath}")
+    async def is_elem_exists_by_xpath(self, xpath, iframe=None) -> bool:
+        """
+        瞬时判断元素是否存在：
+        - 元素存在 → 返回第一个匹配的元素 Locator
+        - 元素不存在/异常 → 返回 False
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.is_elem_exists(f"xpath={xpath}", iframe)
 
-    async def is_elem_exists_by_css(self, css):
-        return await self.is_elem_exists(css)
+    async def is_elem_exists_by_css(self, css, iframe=None) -> bool:
+        """
+        瞬时判断元素是否存在：
+        - 元素存在 → 返回第一个匹配的元素 Locator
+        - 元素不存在/异常 → 返回 False
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.is_elem_exists(css, iframe)
 
-    async def wait_for_disappeared(self, wait_time, locator: str | Locator):
-        page = self.get_current_page()
+    async def wait_for_disappeared(self, wait_time: float, locator: str | Locator, context=None):
+        if not context:
+            context = self.get_current_page()
+
         timeout = wait_time * 1000
         try:
             if isinstance(locator, str):
-                await page.wait_for_selector(locator, state="hidden", timeout=timeout)
+                locator_obj = context.locator(locator)
+                await locator_obj.first.wait_for(timeout=timeout, state="hidden")
             else:
-                await locator.wait_for(state="hidden", timeout=timeout)
-        except PlaywrightTimeoutError:
+                await locator.first.wait_for(timeout=timeout, state="hidden")
+        except:
             pass
 
-    async def wait_for_disappeared_by_xpath(self, wait_time, xpath):
-        await self.wait_for_disappeared(wait_time, f"xpath={xpath}")
+    async def wait_for_disappeared_by_xpath(self, wait_time: float, xpath: str, iframe=None):
+        """
+        等待元素消失
+        :param wait_time: 等待时间，单位秒
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
+        await self.wait_for_disappeared(wait_time, f"xpath={xpath}", iframe)
 
-    async def wait_for_disappeared_by_css(self, wait_time, css):
-        await self.wait_for_disappeared(wait_time, css)
+    async def wait_for_disappeared_by_css(self, wait_time: float, css: str, iframe=None):
+        """
+        等待元素消失
+        :param wait_time: 等待时间，单位秒
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
+        await self.wait_for_disappeared(wait_time, css, iframe)
 
-    async def register_alert_handler(self, handler):
-        page = self.get_current_page()
-        page.on("dialog", handler)
-
-    async def get_alert(self, wait_time):
-        page = self.get_current_page()
-        ret: Optional[Dialog] = None
-        timeout = wait_time * 1000
-        try:
-            ret = await page.wait_for_event("dialog", timeout=timeout)
-        except PlaywrightTimeoutError:
-            pass
-        return ret
+    async def register_alert_handler(self, handler: Callable[[Dialog], None]):
+        """
+        注册弹窗监听方法
+        最好提前用该方法获取监听
+        :param handler: 回调方法，接收一个Dialog类型的参数，dialog.message，dialog.accept(prompt_text=), dialog.dismiss()
+        :return:
+        """
+        self.get_current_page().on("dialog", handler)
 
     async def is_alert_present(self) -> Dialog | bool:
+        """
+        判断网页弹窗是否存在
+        - 不存在返回False
+        - 存在返回Dialog
+        :return:
+        """
         try:
-            page = self.get_current_page()
-            return await page.wait_for_event("dialog", timeout=10)
-        except PlaywrightTimeoutError:
+            return await self.get_current_page().wait_for_event("dialog", timeout=0.0)
+        except:
             return False
 
-    async def confirm_alert(self):
-        dialog = await self.get_alert(10)
-        if dialog:
-            await dialog.accept()
+    async def accept_dialog(self, dialog: Dialog, prompt_text=""):
+        """
+        处理弹窗
+        :param dialog: 弹窗
+        :param prompt_text: 输入内容
+        :return:
+        """
+        await dialog.accept(prompt_text="我是输入的内容")
 
-    async def wait_for_visible(self, wait_time, locator: Union[Locator, str]) -> Union[Locator, bool]:
-        page = self.get_current_page()
-        ret = False
+    async def wait_for_visible(self, wait_time: float, locator: Locator | str, iframe=None) -> Locator | bool:
+        context = self.get_current_page() if not iframe else iframe
         timeout = wait_time * 1000
         try:
             if isinstance(locator, Locator):
-                await locator.wait_for(timeout=timeout, state="visible")
-                ret = locator
+                await locator.first.wait_for(timeout=timeout, state="visible")
+                return locator
             else:
-                ret = page.locator(locator)
-                await ret.wait_for(timeout=timeout, state="visible")
-        except Exception:
-            ret = False
-        return ret
+                locator_obj = context.locator(locator)
+                await locator_obj.first.wait_for(timeout=timeout, state="visible")
+                return locator_obj.first
+        except:
+            return False
 
-    async def wait_for_visible_by_xpath(self, wait_time, xpath):
-        return await self.wait_for_visible(wait_time, f"xpath={xpath}")
+    async def wait_for_visible_by_xpath(self, wait_time: float, xpath: str, iframe=None) -> Locator | bool:
+        """
+        等待元素可见
+        - 返回第一个可见的元素 Locator
+        - 元素不可见/异常 → 返回 False
+        :param wait_time: 等待时间
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.wait_for_visible(wait_time, f"xpath={xpath}", iframe)
 
-    async def wait_for_visible_by_css(self, wait_time, css):
-        return await self.wait_for_visible(wait_time, css)
+    async def wait_for_visible_by_css(self, wait_time: float, css: str, iframe=None) -> Locator | bool:
+        """
+        等待元素可见
+        - 返回第一个可见的元素 Locator
+        - 元素不可见/异常 → 返回 False
+        :param wait_time: 等待时间
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.wait_for_visible(wait_time, css, iframe)
 
-    async def is_elem_exists_with_wait(self, wait_time, locator: str):
-        page = self.get_current_page()
-        ret = False
-        timeout = wait_time * 1000
+    async def is_elem_exists_with_wait(self, wait_time: float, locator: str, iframe=None) -> Locator | bool:
+        context = self.get_current_page() if not iframe else iframe
         try:
-            ret = page.locator(locator)
-            await ret.wait_for(state="attached", timeout=timeout)
-        except PlaywrightTimeoutError:
-            ret = False
-        return ret
+            ret = context.locator(locator)
+            await ret.first.wait_for(timeout=wait_time * 1000, state="attached")
+            return ret.first
+        except:
+            return False
 
-    async def is_elem_exists_with_wait_by_xpath(self, wait_time, xpath):
-        return await self.is_elem_exists_with_wait(wait_time, f"xpath={xpath}")
+    async def is_elem_exists_with_wait_by_xpath(self, wait_time: float, xpath: str, iframe=None) -> Locator | bool:
+        """
+        等待元素存在
+        - 返回第一个存在的元素 Locator
+        - 元素不存在/异常 → 返回 False
+        :param wait_time: 等待时间，单位：秒
+        :param xpath: xpath表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.is_elem_exists_with_wait(wait_time, f"xpath={xpath}", iframe)
 
-    async def is_elem_exists_with_wait_by_css(self, wait_time, css):
-        return await self.is_elem_exists_with_wait(wait_time, css)
+    async def is_elem_exists_with_wait_by_css(self, wait_time: float, css, iframe=None) -> Locator | bool:
+        """
+        等待元素存在
+        - 返回第一个存在的元素 Locator
+        - 元素不存在/异常 → 返回 False
+        :param wait_time: 等待时间，单位：秒
+        :param css: css表达式
+        :param iframe: iframe
+        :return:
+        """
+        return await self.is_elem_exists_with_wait(wait_time, css, iframe)
 
 
 from playwright.sync_api import sync_playwright

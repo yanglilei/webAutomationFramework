@@ -118,7 +118,8 @@ class WebDriverManager:
 
             await self._init_global_playwright()
             if not self._global_browser:
-                self._global_browser = await self._global_playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{driver_config.hook_port}")
+                self._global_browser = await self._global_playwright.chromium.connect_over_cdp(
+                    f"http://127.0.0.1:{driver_config.hook_port}")
             context = await self._global_browser.new_context(**await self._set_context_options(driver_config))
 
         # 封装返回信息
@@ -193,8 +194,8 @@ class WebDriverManager:
 
             if self._global_playwright:
                 await self._global_playwright.stop()
-        except:
-            self.logger.debug("关闭全局资源失败", exec_info=True)
+        except Exception as e:
+            self.logger.debug(f"关闭全局资源失败：{str(e)}")
 
     async def get_user_driver(self, username: str, batch_no: str) -> Optional[BrowserContext]:
         """获取用户专属Driver（仅返回运行中的Driver）"""
@@ -213,6 +214,16 @@ class WebDriverManager:
             "headless": driver_config.headless_mode == "1",
             "args": args,
         }
+
+        # Chrome可执行文件路径（通用逻辑）
+        if driver_config.browser_exe_position:
+            exe_path = Path(driver_config.browser_exe_position)
+            if not exe_path.is_absolute():
+                exe_path = Path(SysPathUtils.get_root_dir(), driver_config.browser_exe_position)
+            if exe_path.exists():
+                launch_options["executable_path"] = str(exe_path)
+            else:
+                raise ValueError(f"浏览器可执行文件不存在: {exe_path}")
 
         common_args = []
         if driver_config.browser_type == "0":
@@ -250,16 +261,6 @@ class WebDriverManager:
                                     # 解决无头模式下 GPU 兼容性问题
                                     '--ignore-gpu-blocklist',
                                     '--enable-features=VaapiVideoDecoder'])
-
-            # Chrome可执行文件路径（通用逻辑）
-            if driver_config.browser_exe_position:
-                exe_path = Path(driver_config.browser_exe_position)
-                if not exe_path.is_absolute():
-                    exe_path = Path(SysPathUtils.get_root_dir(), driver_config.browser_exe_position)
-                if exe_path.exists():
-                    launch_options["executable_path"] = str(exe_path)
-                else:
-                    raise ValueError(f"Chrome可执行文件不存在: {exe_path}")
 
         elif driver_config.browser_type == "1":
             # 1. 通用参数（所有模式都生效）

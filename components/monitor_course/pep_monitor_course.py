@@ -28,9 +28,11 @@ class PEPMonitorCourse(BaseMonitorCourseTaskNode):
                         """)
             played_time = self.format_video_time(times[0])
             total_time = self.format_video_time(times[1])
-            self.logger.info(f"课程：【{course_name}】播放进度: {played_time}/{total_time}")
-            if played_time == total_time and played_time != "00:00:00":
-                self.logger.info(f"课程：【{course_name}】播放完成")
+            self.logger.info(f"【{course_name}】{played_time}/{total_time}")
+            # 出现视频结束的按钮
+            btn_play_stop = await self.get_elem_by_xpath("//button[@class='stop-reporting-btn']")
+            if (played_time == total_time and played_time != "00:00:00") or (btn_play_stop and await btn_play_stop.is_visible()):
+                self.logger.info(f"【{course_name}】播放完成")
                 await self.close_window(tab)
                 course_finished_status.append(True)
                 continue

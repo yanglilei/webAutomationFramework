@@ -58,7 +58,7 @@ class DriverConfigFormatter:
         incognito_mode = cls._format_param(driver_config, "incognito_mode", "1", optional_val=("0", "1"))
         is_selenium_wire = cls._format_param(driver_config, "is_selenium_wire", "0", optional_val=("0", "1"))
         return DriverConfig(browser_exe_position, hook_port, headless_mode, incognito_mode,
-                            is_selenium_wire, browser_type, driver_config.get("driver_path").strip())
+                            is_selenium_wire, browser_type, driver_config.get("driver_path", "").strip())
 
     @classmethod
     def _format_param(cls, driver_config, param_name, default_val, optional_val=("0", "1")):
