@@ -277,7 +277,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget = None  # 左侧导航栏
         self.setWindowTitle(f"{self.app_name}V{self.version}")
         self.setGeometry(100, 100, 1000, 700)  # 初始窗口大小
-        self.setMinimumSize(1200, 680)  # 最小窗口尺寸，避免缩放过小
+        # self.setMinimumSize(1200, 680)  # 最小窗口尺寸，避免缩放过小
         self.init_ui()  # 初始化UI
         # self.resource_monitor = ResourceMonitor(LOG, self.running_center_page)
         # self.resource_monitor.start()
@@ -735,9 +735,11 @@ def qt_message_handler(msg_type, context, msg):
 if __name__ == "__main__":
     try:
         atexit.register(release)
-        # 高分屏+抗锯齿
-        # QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-        # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+        # 关键步骤：启用高DPI缩放支持（必须在创建QApplication前设置）
+        # 方式1：自动适配系统DPI（推荐）
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+        # 方式2：使用系统原生DPI缩放（可选，配合方式1使用）
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
         qInstallMessageHandler(qt_message_handler)  # 安装日志处理器
         app = QApplication([])
         app.setStyle(QStyleFactory.create("Fusion"))  # 统一跨平台样式
