@@ -29,9 +29,10 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
         # time.sleep(2)
         tab_my_training = await self.get_elem_with_wait_by_xpath(10, "//a[text()='我的培训']")
         await tab_my_training.click()
-        target_iframe = await self.wait_for_visible_by_xpath(10, "//iframe[@name='iframe0']")
-        self.switch_to_frame(target_iframe)
-        course_link = await self.get_elem_by_css("table#myassess tbody tr:nth-child(1) td:nth-child(1) a")
+        iframe_xpath = "//iframe[@name='iframe0']"
+        await self.wait_for_visible_by_xpath(10, iframe_xpath)
+        # self.switch_to_frame(iframe_xpath)
+        course_link = await self.get_elem_by_css("table#myassess tbody tr:nth-child(1) td:nth-child(1) a", iframe_xpath)
         if not course_link:
             self.logger.error("未找到课程链接")
             return False, "未找到课程链接"
@@ -50,7 +51,8 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
             self.logger.error("未找到未完成课程")
             return False, "未找到未完成课程"
         # 获取课程名称
-        course_name = await self.get_relative_elem_by_xpath(first_unfinished_course, "./following-sibling::h5").text_content()
+        elem = await self.get_relative_elem_by_xpath(first_unfinished_course, "./following-sibling::h5")
+        course_name = await elem.text_content()
         if first_unfinished_course:
             await first_unfinished_course.click()
             # 每天2个课时的弹窗

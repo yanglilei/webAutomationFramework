@@ -320,12 +320,16 @@ class WebDriverManager:
             "timezone_id": "Asia/Shanghai",  # 时区设置（可选，根据需要调整）
             "permissions": ["geolocation"],  # 只授予必要权限
         }
-
-        if driver_config.browser_type == "0":  # chrome的窗口最大化配置
+        if driver_config.browser_type == "0":
+            # chrome的窗口最大化配置
+            # 无头模式-该参数失效，需要采用设置分辨率的方式最大化！
+            # 有头模式-该参数生效，则设置分辨率的方式会失效！
             context_options["no_viewport"] = True
-        else:  # 火狐的窗口最大化
-            screen_width, screen_height = self.get_screen_resolution()
-            context_options["viewport"] = {"width": screen_width, "height": screen_height}
+
+        # 获取屏幕分辨率
+        screen_width, screen_height = self.get_screen_resolution()
+        # 通过设置分辨率的方式让窗口最大化，火狐必须，chrome有头则自动被忽略
+        context_options["viewport"] = {"width": screen_width, "height": screen_height}
 
         return context_options
 

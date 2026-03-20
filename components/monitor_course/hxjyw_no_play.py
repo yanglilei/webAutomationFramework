@@ -5,7 +5,7 @@ from typing import Dict, Any
 from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
 
 
-@dataclass
+@dataclass(init=False)
 class HXJYWNoPlay(BaseMonitorCourseTaskNode):
     """
     海西教育网无需播放自动计时版本！仙游和涵江的支持该版本
@@ -13,9 +13,13 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
     project_code: str = ""  # 项目编码
 
     async def handle_prev_output(self, prev_output: Dict[str, Any]):
+        await super().handle_prev_output(prev_output)
         project_code = prev_output.get("project_code", "")
         if project_code and project_code.strip():
             self.project_code = project_code.strip()
+
+    async def prepare_before_poll_monitor_course(self):
+        await self.switch_to_latest_window()
 
     async def single_poll_monitor(self):
         if await self._is_current_course_finished():
@@ -37,8 +41,9 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
 
         total_time_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyBestMinutesNumber']")
         learned_time_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyMinutesNumber']")
-        self.logger.info(
-            f"用户【{self.username_showed}】【{self.course_name}】，总时间：{await total_time_elem.text_content()}分钟，已学习时间：{await learned_time_elem.text_content()}分钟")
+        if total_time_elem and learned_time_elem:
+            self.logger.info(
+                f"【{self.course_name}】，总时间：{await total_time_elem.text_content()}分钟，已学习时间：{await learned_time_elem.text_content()}分钟")
 
     async def _is_current_course_finished(self):
         finished_tips_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='bestMinutesTips']", False)
@@ -46,7 +51,7 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
 
     async def _handle_content_pause_tips(self):
         confirm_btn = await self.get_elem_by_xpath(
-            "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
+            "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！'] | //div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
 
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
             try:
@@ -77,14 +82,17 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
 
     async def _handle_i_am_here(self):
         # 处理弹窗“你还在认真学习吗？”
-        if await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
+        alert_xpath = "//div[contains(@class,'layui-layer layui-layer-page')]"
+        if await self.get_elem_by_xpath(alert_xpath):
             # 弹出了“你还在认真学习吗？”的对话框
-            verify_code_val = await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']").text_content()
-            await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']").fill(
-                verify_code_val)
-            await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']").click()
+            elem = await self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']")
+            verify_code_val = await elem.text_content()
+            elem = await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']")
+            await elem.fill(verify_code_val)
+            elem = await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")
+            await elem.click()
+            await self.wait_for_disappeared_by_xpath(10, alert_xpath)
             self.logger.info(f"用户【{self.username_showed}】处理“您还在认真学习吗？“弹窗成功")
 
     async def _handle_pause(self):

@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
-import httpx
-from playwright.async_api import FrameLocator
+from playwright.async_api import FrameLocator, APIResponse
 
 from src.frame.base import BaseLoginTaskNode
 from src.frame.common.exceptions import BusinessException
@@ -109,11 +108,14 @@ class SMTEDULogin(BaseLoginTaskNode):
                 headers = {"Cookie": await self.cookie_to_str(), "Content-Type": "application/json;charset=utf-8",
                            "User-Agent": await self.user_agent()}
 
-                async with httpx.AsyncClient() as client:
-                    img = await client.get(img_url, headers=headers)
-                    LOG.info(f"用户【{self.username_showed}】下载图片验证码成功！")
-                    with open(self.background_img_path, "wb") as f:
-                        f.write(img.content)
+                response: APIResponse = await self.context.request.get(img_url)
+                with open(self.background_img_path, "wb") as f:
+                    f.write(await response.body())
+                # async with httpx.AsyncClient() as client:
+                #     img = await client.get(img_url, headers=headers)
+                #     LOG.info(f"用户【{self.username_showed}】下载图片验证码成功！")
+                #     with open(self.background_img_path, "wb") as f:
+                #         f.write(img.content)
 
                 btn_sliders = captcha_iframe.locator(".tc-fg-item")
                 btn_slider = None
@@ -123,7 +125,7 @@ class SMTEDULogin(BaseLoginTaskNode):
                     # start_x = box["x"] + box["width"] / 2
                     # start_y = box["y"] + box["height"] / 2
                     # if await elem.is_visible() and "tc-slider-normal" in await elem.get_attribute("class"):
-                    if 49<= int(box["width"]) <= 51:
+                    if abs(int(box["width"]) - int(box["height"])) < 5:
                         btn_slider = elem
                         break
                 if not btn_slider:
@@ -159,20 +161,28 @@ class SMTEDULogin(BaseLoginTaskNode):
                     ret = False
                     break
 
+                back_ground_img_elem = await self.get_elem_with_wait_by_xpath(2, "//div[@id='slideBg']",
+                                                                              iframe=captcha_iframe)
+                box = await back_ground_img_elem.bounding_box()
+                ratio = 672 / box['width']
                 # 实际移动的距离=该方法计算出的距离/缩放比例 - 滑块的起始距离
-                move_x = int(x / 2.4 - 30)
+                move_x = int(x / ratio - 30 / ratio * 2.4)
                 page = self.get_current_page()
                 await SliderVerifyUtils.move_slider_slowly_pw_version(move_x, btn_slider, page)
                 await asyncio.sleep(2)
+
                 back_ground_img_elem = await self.get_elem_with_wait_by_xpath(2, "//div[@id='slideBg']",
                                                                               iframe=captcha_iframe)
+
                 if back_ground_img_elem:
                     # 验证失败，刷新验证码
                     LOG.error(f"滑块验证失败，开始重试，重试次数：{count}")
+                    await self.screenshot(Path(SysPathUtils.get_tmp_file_dir(), f"{self.username}_{count}.png"))
                     await captcha_iframe.locator("#e_reload").click()
                     await asyncio.sleep(2)
                 else:
                     # 验证成功
+                    await self.screenshot(Path(SysPathUtils.get_tmp_file_dir(), f"{self.username}_{count}.png"))
                     LOG.info(f"滑块验证成功")
                     ret = True
                     break
@@ -203,5 +213,3 @@ class SMTEDULogin(BaseLoginTaskNode):
         tmp_dir = Path(SysPathUtils.get_root_dir(), "tmp")
         tmp_dir.mkdir(parents=True, exist_ok=True)
         return tmp_dir
-
-

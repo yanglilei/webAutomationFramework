@@ -152,6 +152,26 @@ class TaskManager(QObject):
 
         return "释放资源成功！"
 
+
+    def add_to_scheduled_task(self, batch_nos: List[str]):
+        """
+        添加到计划任务
+        :param batch_nos: 批次号列表
+        :return:
+        """
+        try:
+            self.db.scheduled_task_dao.add_from_task_batch(batch_nos)
+        except Exception as e:
+            raise BusinessException(str(e))
+        return "添加计划任务成功！"
+
+    def reset_status(self, batch_nos: List[str]):
+        try:
+            self.db.task_batch_dao.reset_status(batch_nos)
+        except Exception as e:
+            raise BusinessException(str(e))
+        return "重置状态成功！"
+
     def on_all_task_batch_finished(self, action_id: int, batch_nos: List[str], unreleased_batch_nos: set):
         """
         所有批次完成

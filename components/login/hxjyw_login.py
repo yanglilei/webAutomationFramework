@@ -27,7 +27,7 @@ class HXJYWLoginTaskNode(BaseLoginTaskNode):
 
         # 登录对话框触发按钮
         btn_trigger_login_dialogue = await self.get_elem_with_wait_by_xpath(10, "//span[@id='login']")
-        if btn_trigger_login_dialogue and await btn_trigger_login_dialogue.is_enabled() and await btn_trigger_login_dialogue.is_displayed():
+        if btn_trigger_login_dialogue and await btn_trigger_login_dialogue.is_enabled() and await btn_trigger_login_dialogue.is_visible():
             await btn_trigger_login_dialogue.click()
             # 登录对话框
             login_dialogue = await self.get_elem_with_wait_by_xpath(10,
@@ -94,7 +94,7 @@ class HXJYWLoginTaskNode(BaseLoginTaskNode):
                 verify_code_input = await self.get_elem_with_wait_by_xpath(10, verify_code_input_xpath)
                 # 提取图片中的验证码
                 try:
-                    code = MyDdddOcr.extract_verify_code_from_bytes(self.screenshot(element=captcha_img_elem))
+                    code = MyDdddOcr.extract_verify_code_from_bytes(await self.screenshot(element=captcha_img_elem))
                 except:
                     LOG.error("用户【%s】提取图片中的验证码失败，重试提取.." % self.username_showed)
                     await asyncio.sleep(1)

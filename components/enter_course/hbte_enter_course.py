@@ -1,10 +1,11 @@
 import asyncio
 import json
+from asyncio import timeout
 from dataclasses import dataclass, field
 from typing import Tuple, Dict, Any
 
-import httpx
 from playwright.async_api import Locator
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from src.frame.base.base_enter_course_node import BaseEnterCourseTaskNode
 from src.frame.common.exceptions import BusinessException
@@ -38,50 +39,44 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     # 主窗口的URL
     main_window_url: str = ""
 
+    def set_up(self):
+        self.excluded_courses = []
+        self.chapter_name_list = []
+
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
-        self.logger.info(f"用户【{self.username_showed}】开始执行【{self.node_config.get('node_name')}】")
-        await self.switch_to_latest_window()
-        if not self.project_code:
-            return False, "项目编码为空"
-
-        if "hj" in self.project_code and "office/home" not in await self.get_current_url():
-            # 跳转到选择项目页面
-            await self.load_url("https://hxwyxpt.t-px.cn/office/home")
-            await asyncio.sleep(2)
-            # time.sleep(2)
-
-        self.course_type = self.node_config.get("node_params", {}).get("course_type")
-        if not "intoStudentStudy" in await self.get_current_url():
-            if self.course_type.split("|")[-1] == 1:
-                # 进入公需课
-                await self._enter_pub_project()
-            else:
-                # 进入专业课
-                await self._enter_pro_project()
+        # self.main_window_url = "https://office.teacher.com.cn/views/learningViews/myOffice/index.html"
+        # await self.open_in_new_window(self.main_window_url)
+        await self.load_url("https://mingshi8.hbte.com.cn/index.php/Home/Project/index.html")
+        await asyncio.sleep(1)
+        btn_show_project = await self.get_elem_with_wait_by_xpath(20, "//a[contains(@class, 'jinxingProductA')]")
+        await self.js_click(btn_show_project)
+        btn_enter_project = await self.get_elem_with_wait_by_xpath(20, "//a[@id='tiao']")
+        await self.js_click(btn_enter_project)
+        btn_enter_class = await self.get_elem_with_wait_by_xpath(20, "//div[@class='button-item button-item-hover']")
+        await self.js_click(btn_enter_class)
         # 等待页面加载完成
         # 处理完善个人信息的弹窗
-        await self._handle_complete_info_tips()
+        # await self._handle_complete_info_tips()
         await asyncio.sleep(3)
-        # time.sleep(3)
         await self.wait_for_disappeared_by_xpath(20, "//div[@class='layui-layer-shade']")
-        learn_tab = await self.get_elem_with_wait_by_xpath(10, "//a[text()='学习计划']")
-        await learn_tab.click()
+        # learn_tab = await self.get_elem_with_wait_by_xpath(10, "//a[text()='学习计划']")
+        # await learn_tab.click()
         await self._init_plan_id()
         await self._init_phase_id()
 
         await self._init_user_id()
         await self._init_project_id()
         self.main_window_url = await self.get_current_url()
-        if self._is_passed():
+        if await self._is_passed():
             # 学习通过了，无需学习
             self.logger.info(f"用户【{self.username_showed}】学习成绩已经合格了，准备退出")
             # self.do_after_finished_all_courses()
             return False, f"{self.course_type.split('|')[0]}已学完"
         else:
             # 处理完善个人信息的弹窗
-            await self._handle_complete_info_tips()
+            # await self._handle_complete_info_tips()
             # 处理课程页面的建议信息
-            await self._handle_course_page_tips()
+            # await self._handle_course_page_tips()
             # 处理选课
             # self._handle_choose_course()
             # 判断课程类型
@@ -114,8 +109,10 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
             return False, f"{self.course_type.split('|')[0]}已学完"
         # 展开章节，让课程元素可见
         if not await course.is_visible():
-            await course.scroll_into_view_if_needed()
-            await self.wait_for_visible(2, course)
+            try:
+                await course.scroll_into_view_if_needed(timeout=3000)
+            except:
+                pass
         # 展开课程
         if not await course.is_visible():
             menu_elem = await self.get_relative_elem_by_xpath(course,
@@ -138,22 +135,25 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         try:
             await self.js_click(course)
         except:
-            self.logger.exception(f"用户【{self.username_showed}】点击进入课程【{self.course_name}】失败")
+            self.logger.exception(f"用户【{self.username_showed}】点击进入课程【{course_name}】失败")
             return False, "点击进入课程失败"
         else:
-            # 等待打开新窗口
             await asyncio.sleep(2)
-            # time.sleep(2)
             await self.switch_to_latest_window()
-
+            # 等待打开新窗口
+            max_retry_count = 20
+            while "intoSelectCourseVideo" not in await self.get_current_url() and max_retry_count > 0:
+                await asyncio.sleep(1)
+                max_retry_count -= 1
+                await self.switch_to_latest_window()
         return True, course_name
 
-    def handle_prev_output(self, prev_output: Dict[str, Any]):
+    async def handle_prev_output(self, prev_output: Dict[str, Any]):
         project_code = prev_output.get("project_code", "")
         if project_code and project_code.strip():
             self.project_code = project_code.strip()
 
-    def send_node_output(self):
+    async def send_node_output(self):
         """
         传递输出数据，可调用set_output_data方法设置输出的参数
         """
@@ -161,9 +161,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
 
     async def _get_pub_first_course(self) -> Locator:
         ret = None
-        xpath = "//a[(./preceding-sibling::i/text() = '学习中' or ./preceding-sibling::i/text() = '未学习') and @class='list-title'][.//following-sibling::a[text()='进入学习']]"
-        if "hxwysqy2025" in self.project_code or "hxxy2025" in self.project_code:
-            xpath = "//a[(./preceding-sibling::i/text() = '学习中' or ./preceding-sibling::i/text() = '未学习') and @class='layui-btn layui-btn-primary' and @data-type='课程' ]"
+        xpath = "//a[(./preceding-sibling::i/text() = '学习中' or ./preceding-sibling::i/text() = '未学习') and @class='layui-btn layui-btn-primary' and @data-type='课程' ]"
 
         courses = await self.get_elems_with_wait_by_xpath(10, xpath, False)
         if courses:
@@ -171,51 +169,6 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                 if await course.text_content() not in self.excluded_courses:
                     ret = course
                     break
-        return ret
-
-    async def _get_first_content(self):
-        if "hxwysqy2025" in self.project_code:
-            contents = await self.get_elems_with_wait_by_xpath(10,
-                                                         "(//li[contains(@class, 'isStudy')])[last()]//following::li[contains(@class, 'type_1')]")
-            if contents:
-                first_content = contents[0]
-                if not await first_content.is_visible():
-                    await first_content.scroll_into_view_if_needed()
-                return first_content
-            else:
-                return None
-        else:
-            first_content = None
-            try:
-                first_content = await self.get_elem_with_wait_by_xpath(3,
-                                                                 "//div[@class='course-list-con']//li[contains(@class, 'cur')]//a",
-                                                                 False)
-            except:
-                pass
-            else:
-                if not await first_content.is_visible():
-                    await first_content.scroll_into_view_if_needed()
-                    # if self.course_type == HXCourseType.PRO_COURSE:
-                    # # 获取目录所处的章节，目的为了点击展开章节，让目录可见，才能点击
-                    # chapter_elem: WebElement = first_content.find_element(By.XPATH,
-                    #                                                       "../../preceding-sibling::h4//a")
-                    # chapter_elem.click()
-                    # time.sleep(1)
-                    # if not first_content.is_visible():
-                    #     first_content.scroll_into_view_if_needed()
-            return first_content
-
-    async def _get_content_name(self, cur_content):
-        ret = None
-        if "hxwysqy2025" in self.project_code:
-            ret = await cur_content.get_attribute("title")
-        else:
-            try:
-                course_name_elem = await self.get_elem_with_wait_by_xpath(5, "//div[@class='course-info']//a")
-            except Exception as e:
-                self.logger.error("用户【%s】没有获取到课程名称，页面出现异常！" % (self.username_showed,))
-            else:
-                ret = await course_name_elem.text_content() + "(" + await cur_content.text_content() + ")"
         return ret
 
     async def _wait_for_shade_disappear(self):
@@ -326,26 +279,28 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                    "Referer": f"https://{self.project_code}.stu.t-px.cn/studyPlan/intoStudentStudy",
                    }
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers)
+            resp = await self.context.request.get(url, headers=headers)
             # resp = requests.get(url, headers=headers)
         except:
             self.logger.error("用户【%s】获取考核结果异常" % self.username_showed)
             raise
         else:
-            resp_json = json.loads(resp.text)
-            user_info = resp_json["data"]["userInfo"]
+            json_obj = await resp.json()
+            user_info = json_obj["data"]["userInfo"]
 
         return user_info["name"], user_info["sectionName"] + user_info["subjectName"], user_info["mobile"], user_info[
             'idnumber'], user_info["path"], user_info["workUnit"]
 
     async def _is_passed(self):
-        if "hxwysqy2025" in self.project_code:
-            scores = await self._get_score(self.project_id, self.user_id)
-        else:
-            scores = await self._get_score2(self.plan_id, self.phase_id)
+        # 解决有时候获取分数异常，重新获取一次
+        scores = await self._get_score(self.project_id, self.user_id)
+        # if "hxwysqy2025" in self.project_code:
+        #     scores = await self._get_score(self.project_id, self.user_id)
+        # else:
+        #     scores = await self._get_score2(self.plan_id, self.phase_id)
         return scores[1] >= scores[0]
 
+    @retry(retry=retry_if_exception_type(Exception), stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def _get_score(self, project_id, user_id) -> tuple:
         """
         获取考核成绩
@@ -354,7 +309,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         :return: tuple (总分,得分)
         """
         ret = None
-        url = "https://%s.stu.t-px.cn/scoreStudent/findProjectPhaseScoreAndDetail" % self.project_code
+        url = "https://pn202513034.stu.teacher.com.cn/scoreStudent/findProjectPhaseScoreAndDetail"
         # url = "https://%s.stu.t-px.cn/scoreStudent/findProjectPhaseScore" % self.project_code
         # id=2974&projectPhaseId=642
         # params = {"id": user_id, "projectPhaseId": user_id}
@@ -367,18 +322,16 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         try:
             # resp = requests.post(url, data=params, headers=headers)
             # resp = requests.post(url, headers=headers)
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=headers)
+            resp = await self.context.request.post(url, headers=headers)
         except:
             self.logger.error("用户【%s】获取考核结果异常" % self.username_showed)
             raise
         else:
-            resp_json = json.loads(resp.text)
+            resp_json = await resp.json()
             # ret = resp_json["data"]["projectPhaseScoreList"][0]["qualifiedPoint"], \
             #     resp_json["data"]["projectPhaseScoreList"][0]["onLineScore"]
             ret = resp_json["data"]["scoreDetailInfoList"][0]["scoreDetailDTO"]["contentTypeCourse"]["courseMaxScore"], \
                 resp_json["data"]["scoreDetailInfoList"][0]["scoreDetailDTO"]["contentTypeCourse"]["courseScore"]
-
         return ret
 
     async def _get_score2(self, study_plan_id, project_phase_id) -> tuple:
@@ -398,14 +351,12 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                    "Origin": "https://%s.stu.t-px.cn" % self.project_code
                    }
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, data=params, headers=headers)
-            # resp = requests.post(url, data=params, headers=headers)
+            resp = await self.context.request.post(url, data=params, headers=headers)
         except:
             self.logger.error("用户【%s】获取考核结果异常" % self.username_showed)
             raise
         else:
-            resp_json = json.loads(resp.text)
+            resp_json = await resp.json()
             ret = resp_json["data"]["scoreDetailDTO"]["contentTypeCourse"]["courseMaxScore"], \
                 resp_json["data"]["scoreDetailDTO"]["contentTypeCourse"]["courseScore"]
         return ret

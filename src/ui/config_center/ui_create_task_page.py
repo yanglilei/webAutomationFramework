@@ -454,6 +454,11 @@ class CreateTaskPage(QWidget):
         self.semi_radio = QRadioButton("半自动")
         self.mode_group.addButton(self.semi_radio, 2)
         radio_layout.addWidget(self.semi_radio)
+
+        # 定时任务单选按钮
+        # self.scheduled_task_radio = QRadioButton("定时任务")
+        # self.mode_group.addButton(self.scheduled_task_radio, 3)
+        # radio_layout.addWidget(self.scheduled_task_radio)
         radio_layout.addStretch()
 
         # 单选按钮状态变化时触发模式更新
@@ -466,6 +471,10 @@ class CreateTaskPage(QWidget):
             self.update_ui("全自动")
         elif btn_id == 2:
             self.update_ui("半自动")
+        # elif btn_id == 3:
+        #     self.update_ui("定时任务")
+        else:
+            QMessageBox.critical(self, "错误", "请选择正确的模式")
 
     def update_ui(self, mode):
         # 清空原有动态UI元素
@@ -477,5 +486,7 @@ class CreateTaskPage(QWidget):
             self.ly_dynamic.addWidget(AutoModePage(self.ui_task_tmpl))
         elif mode == "半自动":
             self.ly_dynamic.addWidget(SemiModePage(self.ui_task_tmpl))
+        # elif mode == "定时任务":
+        #     self.ly_dynamic.addWidget(SemiModePage(self.ui_task_tmpl))
         else:
             QMessageBox.critical(self, "错误", "请选择正确的模式")

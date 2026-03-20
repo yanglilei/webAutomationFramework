@@ -8,6 +8,7 @@ from src.frame.common.qt_log_redirector import LOG
 from src.frame.dao.async_db_task_scheduler import AsyncTaskScheduler
 from src.frame.dao.db_manager import db
 from src.frame.task_manager import TaskManager
+from src.ui.running_center.ui_scheduled_task import UIScheduledTask
 from src.ui.running_center.ui_task_batch import UITaskBatch
 
 
@@ -43,13 +44,19 @@ class FullAutomaticTaskPage(QWidget):
         self.btn_start = QPushButton("开始运行")
         self.btn_force_terminate = QPushButton("停止任务")
         self.btn_free = QPushButton("释放资源")
+        self.btn_reset = QPushButton("重置状态")
+        self.btn_add_scheduled_task = QPushButton("加入定时任务")
         ly_buttons.addWidget(self.btn_start)
-        ly_buttons.addWidget(self.btn_force_terminate)
+        # ly_buttons.addWidget(self.btn_force_terminate)
         ly_buttons.addWidget(self.btn_free)
+        ly_buttons.addWidget(self.btn_reset)
+        # ly_buttons.addWidget(self.btn_add_scheduled_task)
 
         self.btn_start.clicked.connect(self.on_start_clicked)
-        self.btn_force_terminate.clicked.connect(self.on_force_terminate_clicked)
+        # self.btn_force_terminate.clicked.connect(self.on_force_terminate_clicked)
         self.btn_free.clicked.connect(self.on_free_resource)
+        self.btn_add_scheduled_task.clicked.connect(self.on_add_scheduled_task_clicked)
+        self.btn_reset.clicked.connect(self.on_reset_status)
         ##### 表格区域 #####
         self.tbl_task_batch = UITaskBatch(self.run_mode)
 
@@ -149,6 +156,49 @@ class FullAutomaticTaskPage(QWidget):
             self.async_task_executor.submit_task(self.task_manager.free_resource, batch_nos,
                                                  finished_callback=self.on_free_resource_finished)
 
+    def on_add_scheduled_task_clicked(self):
+        """
+        添加到定时任务
+        :return:
+        """
+        rows = self.tbl_task_batch.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择批次")
+            return
+        else:
+            batch_nos = [row.get("batch_no") for row in rows]
+            self.async_task_executor.submit_task(self.task_manager.add_to_scheduled_task, batch_nos,
+                                                 finished_callback=self.on_add_to_scheduled_task_finished)
+
+    def on_reset_status(self):
+        """
+        重置状态
+        :return:
+        """
+        rows = self.tbl_task_batch.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择批次")
+            return
+        else:
+            batch_nos = [row.get("batch_no") for row in rows]
+            self.async_task_executor.submit_task(self.task_manager.reset_status, batch_nos,
+                                                 finished_callback=self.on_reset_status_finished)
+
+    def on_reset_status_finished(self, status, msg, payloads):
+        """
+        重置状态完成
+        :param status:
+        :param msg:
+        :param payloads:
+        :return:
+        """
+        if status:
+            # 刷新表格
+            self.tbl_task_batch.async_refresh_table()
+            QMessageBox.information(self, "提示", "重置状态成功！")
+        else:
+            QMessageBox.critical(self, "错误", f"重置状态失败：{msg}")
+
     def on_free_resource_finished(self, status, msg, payloads):
         """
         释放资源完成
@@ -161,6 +211,19 @@ class FullAutomaticTaskPage(QWidget):
             QMessageBox.information(self, "提示", payloads)
         else:
             QMessageBox.critical(self, "错误", f"释放资源失败：{msg}")
+
+    def on_add_to_scheduled_task_finished(self, status, msg, payloads):
+        """
+        添加到定时任务完成的回调
+        :param status:
+        :param msg:
+        :param payloads:
+        :return:
+        """
+        if status:
+            QMessageBox.information(self, "提示", "添加到定时任务成功，请到定时任务列表配置运行规则！")
+        else:
+            QMessageBox.critical(self, "错误", f"添加定时任务失败：{msg}")
 
 
 class SemiAutomaticTaskPage(QWidget):
@@ -346,6 +409,157 @@ class SemiAutomaticTaskPage(QWidget):
         else:
             QMessageBox.critical(self, "错误", f"任务启动失败：{msg}")
 
+class ScheduledTaskPage(QWidget):
+    """定时任务页面"""
+
+    def __init__(self):
+        super().__init__()
+        # 释放资源按钮
+        self.btn_free = None
+        # 全自动模式
+        self.run_mode = 1
+        # 开启批次运行按钮
+        self.btn_start: Optional[QPushButton] = None
+        # 强制终止按钮
+        self.btn_force_terminate: Optional[QPushButton] = None
+        # 表格
+        self.tbl_scheduled_task: Optional[UITaskBatch] = None
+        # 异步任务执行器
+        self.async_task_executor: AsyncTaskScheduler = AsyncTaskScheduler()
+        # 任务管理器
+        self.task_manager = TaskManager(LOG)
+        # 激活管理器
+        self.activation_manager = ActivationManager()
+        self.activation_manager.activation_status_changed.connect(self.on_activation_status_changed)
+        # 初始化UI
+        self.init_ui()
+
+    def init_ui(self):
+        main_layout = QVBoxLayout()
+        ##### 按钮区域 #####
+        ly_buttons = QHBoxLayout()
+        self.btn_start = QPushButton("启动任务")
+        self.btn_force_terminate = QPushButton("停止任务")
+        self.btn_free = QPushButton("释放资源")
+        ly_buttons.addWidget(self.btn_start)
+        ly_buttons.addWidget(self.btn_force_terminate)
+        ly_buttons.addWidget(self.btn_free)
+
+        self.btn_start.clicked.connect(self.on_start_clicked)
+        self.btn_force_terminate.clicked.connect(self.on_force_terminate_clicked)
+        self.btn_free.clicked.connect(self.on_free_resource)
+        ##### 表格区域 #####
+        self.tbl_scheduled_task = UIScheduledTask()
+
+        ##### 添加到主布局 #####
+        main_layout.addLayout(ly_buttons)
+        main_layout.addWidget(self.tbl_scheduled_task)
+        self.setLayout(main_layout)
+
+    def on_activation_status_changed(self, status, msg):
+        self.btn_start.setEnabled(status)
+
+    def on_start_clicked(self):
+        self.btn_start.setEnabled(False)
+        # 1.校验
+        rows = self.tbl_scheduled_task.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择要运行的批次")
+            return
+        batch_ids = [row.get("id") for row in rows]
+        # 异步查询后执行批次
+        self.async_task_executor.submit_task(self.start_task_batches, batch_ids,
+                                             finished_callback=self.on_start_task_batches)
+
+    def has_running_task(self) -> bool:
+        return self.task_manager.is_running
+
+    def start_task_batches(self, batch_ids):
+        # 在线程内部执行
+        try:
+            task_batches = []
+            for batch_id in batch_ids:
+                task_batch = db.task_batch_dao.get_by_id(batch_id)
+                if not task_batch:
+                    LOG.error(f"未找到任务批次，任务批次ID：{batch_id}")
+                    continue
+                task_batches.append(task_batch)
+            if not task_batches:
+                LOG.error("任务批次不存在！无法运行！")
+                return False, "任务批次不存在！无法运行！"
+
+            if task_batches:
+                action_id = db.action_dao.add_one(
+                    {"batch_ids": ",".join([str(task_batch.get("id")) for task_batch in task_batches])})
+                for task_batch in task_batches:
+                    db.task_batch_dao.update_by_id(task_batch.get("id"), {"action_id": action_id})
+                    task_batch["action_id"] = action_id
+            LOG.info(f"准备初始化任务管理器...")
+            # 启动任务
+            self.task_manager.start_task(task_batches)
+            LOG.info(f"启动任务批次成功...")
+            return True, "成功"
+        except Exception as e:
+            LOG.exception(f"启动任务批次失败：{str(e)}")
+            return False, str(e)
+
+    def on_start_task_batches(self, status, msg, payloads):
+        self.btn_start.setEnabled(True)
+        LOG.debug(f"任务批次启动结果：{status}，{msg}，{payloads}")
+        if status:
+            if not payloads[0]:
+                QMessageBox.critical(self, "错误", f"任务启动失败：{payloads[1]}")
+            else:
+                QMessageBox.information(self, "提示", "任务启动成功，具体请查看运行日志！")
+        else:
+            QMessageBox.critical(self, "错误", f"任务启动失败：{msg}")
+
+    def on_force_terminate_clicked(self):
+        """
+        停止任务
+        """
+        rows = self.tbl_scheduled_task.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择要强制终止的批次")
+            return
+
+        for row in rows:
+            batch_no = row.get("batch_no")
+            self.async_task_executor.submit_task(self.task_manager.terminate_task, batch_no)
+            # self.task_manager.terminate_task(batch_no)
+        QMessageBox.information(self, "提示", "已发送强制终止信号，请刷新任务状态！")
+
+    def on_free_resource(self):
+        """
+        释放资源
+        :return:
+        """
+        rows = self.tbl_scheduled_task.get_selected_rows()
+        if not rows:
+            QMessageBox.warning(self, "提示", "请选择要释放的批次")
+            return
+        else:
+            val = QMessageBox.warning(self, "提示", "请确认是否要释放资源？", QMessageBox.Yes | QMessageBox.No)
+            if val != QMessageBox.Yes:
+                return
+
+            batch_nos = [row.get("batch_no") for row in rows]
+            self.async_task_executor.submit_task(self.task_manager.free_resource, batch_nos,
+                                                 finished_callback=self.on_free_resource_finished)
+
+    def on_free_resource_finished(self, status, msg, payloads):
+        """
+        释放资源完成
+        :param status:
+        :param msg:
+        :param payloads:
+        :return:
+        """
+        if status:
+            QMessageBox.information(self, "提示", payloads)
+        else:
+            QMessageBox.critical(self, "错误", f"释放资源失败：{msg}")
+
 
 class UIExecuteTask(BaseTabWidget):
     """执行任务页面"""
@@ -354,14 +568,18 @@ class UIExecuteTask(BaseTabWidget):
         self.running_status = False
         self.full_automation_task_page: Optional[FullAutomaticTaskPage] = None
         self.semi_automation_task_page: Optional[SemiAutomaticTaskPage] = None
+        self.scheduled_task_page: Optional[ScheduledTaskPage] = None
+
         super().__init__()
         self.setStyleSheet(self.STYLE_MODERN)
 
     def add_tab_widgets(self) -> List[TabWidgetInfo]:
         self.full_automation_task_page = FullAutomaticTaskPage()
         self.semi_automation_task_page = SemiAutomaticTaskPage()
+        self.scheduled_task_page = ScheduledTaskPage()
         return [TabWidgetInfo("全自动", self.full_automation_task_page),
-                TabWidgetInfo("半自动", self.semi_automation_task_page)
+                TabWidgetInfo("半自动", self.semi_automation_task_page),
+                TabWidgetInfo("定时任务", self.scheduled_task_page)
                 ]
 
     def has_running_task(self):

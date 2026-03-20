@@ -8,7 +8,6 @@ import shortuuid
 from src.frame.base.base_task_node import BaseNode, JSNode, BasePYNode
 from src.frame.common.constants import NodeState
 from src.frame.component_manager import component_manager
-from src.utils.async_utils import get_event_loop_safely
 from src.utils.clazz_utils import ClazzUtils
 from src.utils.sys_path_utils import SysPathUtils
 

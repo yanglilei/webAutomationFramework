@@ -96,6 +96,9 @@ class UITaskTmpl(BaseTableWidget):
                 or self._is_empty(data.get('login_interval'))):
             QMessageBox.warning(self, "验证错误", "必要字段不能为空！")
             return False
+        if self.dao.get_by_name(data.get('name').strip()):
+            QMessageBox.warning(self, "验证错误", "任务模板名称已存在！")
+            return False
         return True
 
     def get_add_one_callable(self) -> Callable:

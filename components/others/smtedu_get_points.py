@@ -39,7 +39,7 @@ class SMTEDUGetPoints(BasePYNode):
     # app_id
     app_id: str = ""
     # 最大尝试次数
-    max_try_times: int = 10
+    max_try_times: int = 20
     # 已经尝试的次数
     try_times: int = 0
     # 做之前的积分
@@ -48,6 +48,8 @@ class SMTEDUGetPoints(BasePYNode):
     current_total_points: float = 0.0
     # 会话ID
     session_id: str = ""
+    # 总共浏览课程数量，起始为1，因为进入课程页面就已经自动打开了一个课程。
+    total_view_course_count: int = 1
 
     async def intercept_request_authorization(self, request: Request):
         """
@@ -69,13 +71,17 @@ class SMTEDUGetPoints(BasePYNode):
         # 进入到我的收藏页面
         await self.load_url("https://basic.smartedu.cn/user/myFavorite")
         # 获取用户签名信息
-        self.user_id, self.mac_key, self.access_token, self.app_id = await SMTEduSignUtils.get_user_sign_params(self.execute_js)
-        self.headers = {"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-                        "sdp-app-id": self.app_id}
-        # 获取会话ID
-        # self.session_id = await self._get_session_id()
+        self.user_id, self.mac_key, self.access_token, self.app_id = await SMTEduSignUtils.get_user_sign_params(
+            self.execute_js)
+        self.headers = {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            "sdp-app-id": self.app_id}
         # 获取当前积分
         self.previous_total_points = await self.get_user_points()
+        # 和育小苗互动5次
+        await self._comm_with_yxm()
+        # 获取会话ID
+        # self.session_id = await self._get_session_id()
         # 获取已经收藏的课程，已经收藏了，不需要再收藏
         exclude_course_ids = await self.get_favor_courses()
         # 开始学习
@@ -131,7 +137,7 @@ class SMTEDUGetPoints(BasePYNode):
             page_size = 12
             request_times = calculate_request_times(total, page_size)
             for i in range(request_times):
-                url = self.favor_course_url_tmpl % (i*page_size, page_size, self.user_id)
+                url = self.favor_course_url_tmpl % (i * page_size, page_size, self.user_id)
                 self._set_authorization(url, RequestMethod.GET)
                 resp = await self.context.request.get(url, headers=self.headers)
                 json = await resp.json()
@@ -142,7 +148,8 @@ class SMTEDUGetPoints(BasePYNode):
         return ret
 
     def _set_authorization(self, url, request_method):
-        self.headers["authorization"] = SMTEduSignUtils.gen_authorization(url, self.access_token, self.mac_key, request_method)
+        self.headers["authorization"] = SMTEduSignUtils.gen_authorization(url, self.access_token, self.mac_key,
+                                                                          request_method)
 
     def gen_authorization(self, url, request_method):
         return SMTEduSignUtils.gen_authorization(url, self.access_token, self.mac_key, request_method)
@@ -175,7 +182,9 @@ class SMTEDUGetPoints(BasePYNode):
             if not courses:
                 continue
 
-            if any([course.get("resource_type_code") in {"assets_document", "coursewares", "lesson_plandesign", "learning_task", "after_class_exercise"} for course in courses]):
+            if any([course.get("resource_type_code") in {"assets_document", "coursewares", "lesson_plandesign",
+                                                         "learning_task", "after_class_exercise"} for course in
+                    courses]):
                 # 有包含了文档的课程
                 target_courses.append(item)
 
@@ -201,7 +210,6 @@ class SMTEDUGetPoints(BasePYNode):
                 exclude_material_ids.append(target_material.get("id"))
                 break
 
-
         while True:
             target_courses = await self.get_target_courses(target_material.get("id"), exclude_course_ids)
             if target_courses:
@@ -220,17 +228,24 @@ class SMTEDUGetPoints(BasePYNode):
         return target_courses, exclude_material_ids
 
     async def _do_like(self):
-        btn_like = await self.get_elem_with_wait_by_xpath(10, "//div[@class='course-detail-control']//div[contains(@class, 'index-module_like-count')]")
+        btn_like = await self.get_elem_with_wait_by_xpath(10,
+                                                          "//div[@class='course-detail-control']//div[contains(@class, 'index-module_like-count')]")
         await btn_like.click()
         self.logger.info("✅点赞成功！")
 
     async def _do_favor(self):
-        btn_favor = await self.get_elem_with_wait_by_xpath(10, "//div[@class='course-detail-control']//i[contains(@class, 'index-module_uncollected')]")
+        btn_favor = await self.get_elem_with_wait_by_xpath(10,
+                                                           "//div[@class='course-detail-control']//i[contains(@class, 'index-module_uncollected')]")
         await btn_favor.click()
+        await asyncio.sleep(1.5)
+        btn_confirm = await self.get_elem_with_wait_by_xpath(1.5, "//button[@class='fish-btn fish-btn-primary']")
+        if btn_confirm:
+            await btn_confirm.click()
         self.logger.info("✅收藏成功！")
 
     async def _do_send_points(self):
-        btn_send_points = await self.get_elem_with_wait_by_xpath(10, "//div[@class='course-detail-control']//button[@class='fish-btn fish-btn-round']")
+        btn_send_points = await self.get_elem_with_wait_by_xpath(10,
+                                                                 "//div[@class='course-detail-control']//button[@class='fish-btn fish-btn-round']")
         await btn_send_points.click()
         await asyncio.sleep(1)
         btn_config_xpath = "//div[@class='course-detail-control']//button[.//span[text()='确认提交']]"
@@ -259,14 +274,17 @@ btn_confirm.click();"""
         await self._do_send_points()
         await asyncio.sleep(random.uniform(0.1, 2))
         # 切换课程
-        first_unfinished_content = await self.get_elem_with_wait_by_xpath(10, "(//div[contains(@class,'study-list-item study-list-item-active')]/following-sibling::div)[1]")
+        first_unfinished_content = await self.get_elem_with_wait_by_xpath(10,
+                                                                          "(//div[contains(@class,'study-list-item study-list-item-active')]/following-sibling::div)[1]")
         while first_unfinished_content:
             if not await first_unfinished_content.is_visible():
                 await first_unfinished_content.scroll_into_view_if_needed()
             await asyncio.sleep(random.uniform(0.1, 1))
             await first_unfinished_content.click()
             await asyncio.sleep(random.uniform(0.1, 2))
-            first_unfinished_content = await self.get_elem_by_xpath("(//div[contains(@class,'study-list-item study-list-item-active')]/following-sibling::div)[1]")
+            first_unfinished_content = await self.get_elem_by_xpath(
+                "(//div[contains(@class,'study-list-item study-list-item-active')]/following-sibling::div)[1]")
+            self.total_view_course_count += 1
         # 点击存到我的资源库5次
         btn_save = await self.get_elem("//span[@class='study-more-menu']")
         for _ in range(5):
@@ -299,18 +317,23 @@ btn_confirm.click();"""
 
         if is_enter_course:
             await self._learn_course()
+            if self.total_view_course_count < 5:
+                self.try_times = 0
+                await self.learn_course(favor_course_ids, exclude_material_ids)
+            else:
+                self.logger.info("✅已查看5个课程，退出！")
         else:
             self.try_times += 1
             if self.try_times >= self.max_try_times:
                 self.logger.error("❌尝试次数过多，不再寻找课程，该用户提升积分失败！")
                 if self.user_manager:
-                    self.user_manager.update_record_by_username(self.username, {4: "提升积分失败：找不到合适的课程！重试达到10次！"})
+                    self.user_manager.update_record_by_username(self.username,
+                                                                {4: "提升积分失败：找不到合适的课程！重试达到10次！"})
                 return
             else:
-                self.logger.error(f"❌课程找不到，尝试切换一本教材！重试次数：{self.try_times+1}")
+                self.logger.error(f"❌课程找不到，尝试切换一本教材！重试次数：{self.try_times}")
                 # 课程找不到，重新尝试
                 await self.learn_course(favor_course_ids, exclude_material_ids)
-
 
     async def _get_session_id(self):
         url = r"https://uc-gateway.ykt.eduyun.cn/v1.1/sessions"
@@ -323,8 +346,51 @@ btn_confirm.click();"""
             json = await resp.json()
             return json.get("session_id")
 
+    async def _comm_with_yxm(self):
+        # 和育小苗进行互动，5次
+        btn_open_xm = await self.get_elem_with_wait_by_xpath(10, "//div[@class='ai-assistant2-entrance']")
+        if btn_open_xm:
+            await btn_open_xm.click()
+            # 等待出现育小苗对话框！
+            await self.wait_for_visible_by_xpath(10, "//div[contains(@class, 'fish-modal-wrap ai-assistant2-modal')]")
+            # 获取您可以这样问我的列表
+            btn_known = await self.get_elem_with_wait_by_xpath(10,
+                                                               "//div[@class='ai-assistant2-leftpanel-agents-tip-btn']")
+            if btn_known:
+                await self.js_click(btn_known)
+                total_count = 5
+                while total_count > 0:
+                    qs_list = await self.get_elems_with_wait_by_xpath(10,
+                                                                      "//div[@class='ai-assistant2-homebox-listitem-question-wrapper']")
+                    if qs_list:
+                        await self.js_click(qs_list[0])
 
+                    # 等待回答
+                    await self.wait_for_visible_by_xpath(20, "//div[contains(@class,'ai-assistant2-answer-content')]")
+                    # 再等待内容出来
+                    await asyncio.sleep(random.uniform(3, 6))
+                    # await asyncio.sleep(random.uniform(3, 6))
+                    self.logger.info("✅和育小苗互动次数 +1")
+                    total_count -= 1
+                    if total_count == 0:
+                        break
 
+                    new_dialog = await self.get_elem_with_wait_by_xpath(10,
+                                                                        "//div[@class='ai-assistant2-leftpanel-content']/span[contains(@class, 'ai-assistant2-leftpanel-operator')]//i[@class='ai-assistant2-operator-newtalk-icon']")
+                    if new_dialog:
+                        await self.js_click(new_dialog)
+                    else:
+                        self.logger.error(f"❌获取新的对话框按钮失败！停止和育小苗互动！还差 {total_count} 次，请人工操作！")
+                        break
 
+                    await asyncio.sleep(random.uniform(1, 3))
+                    # 点击换一换
+                    change_btn = await self.get_elem_with_wait_by_xpath(10,
+                                                                        "//div[@class='ai-assistant2-homebox-change']")
 
-
+                    if change_btn:
+                        await self.js_click(change_btn)
+                        await asyncio.sleep(random.uniform(1, 3))
+                    else:
+                        self.logger.error(f"❌获取换一换按钮失败！停止和育小苗互动！还差 {total_count} 次，请人工操作！")
+                        break

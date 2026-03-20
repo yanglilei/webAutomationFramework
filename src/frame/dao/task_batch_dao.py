@@ -364,3 +364,10 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             batch_ids_placeholders = ','.join(['?'] * len(batch_ids))
             sql = """DELETE FROM tb_task_batch WHERE id IN (%s)""" % batch_ids_placeholders
             conn.execute(sql, batch_ids)
+
+    def reset_status(self, batch_nos: List[str]):
+        # 重置状态
+        with self.get_db_connection() as conn:
+            batch_nos_placeholders = ','.join(['?'] * len(batch_nos))
+            sql = """UPDATE tb_task_batch SET execute_status=0, update_time=datetime('now', 'localtime') WHERE batch_no IN (%s)""" % batch_nos_placeholders
+            conn.execute(sql, batch_nos)

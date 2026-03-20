@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Literal, Optional, Callable
+from typing import List, Literal, Optional, Callable, Union, Pattern
 
 from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator
 
@@ -27,6 +27,9 @@ class PlaywrightWebOperator:
         # if not self._current_page:
         #     raise RuntimeError("无可用的页面/窗口")
         return self._current_page
+
+    async def wait_for_url_changed(self, url: Union[str, Pattern[str], Callable[[str], bool]], timeout: float=10.0):
+        await self.get_current_page().wait_for_url(url=url, timeout=timeout*1000)
 
     # async def _convert_by_to_selector(self, by: str, selector: str) -> str:
     #     """将Selenium的By类型转换为Playwright的selector格式"""

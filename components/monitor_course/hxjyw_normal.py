@@ -7,7 +7,7 @@ from playwright.sync_api import Locator
 from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
 
 
-@dataclass
+@dataclass(init=False)
 class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
     """
     海西教育网正常版，需要播放学完全部视频和文档

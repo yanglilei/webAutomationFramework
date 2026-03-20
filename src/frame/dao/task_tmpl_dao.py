@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_tmpl_business_type ON tb_task_tmpl(busine
                                       is_quit_browser_when_finished, start_mode, start_node_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
         params = (task_info["project_id"], task_info["domain"], task_info["business_type"],
-                  task_info["name"],
+                  task_info.get("name").strip() if task_info.get("name") else "",
                   task_info["login_interval"], task_info.get("is_quit_browser_when_finished", 0),
                   task_info.get("start_mode", 1), task_info.get("start_node_id", None))
         with self.get_db_connection() as conn:
@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_tmpl_business_type ON tb_task_tmpl(busine
                 data.get("project_id"),  # 必填
                 data.get("domain"),  # 必填
                 data.get("business_type"),  # 必填
-                data.get("name"),  # 必填
+                data.get("name").strip() if data.get("name") else "",  # 必填
                 data.get("login_interval"),  # 必填
                 # 可选字段：不传则用默认值0
                 data.get("is_quit_browser_when_finished", 1),
@@ -66,6 +66,12 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_tmpl_business_type ON tb_task_tmpl(busine
 
         with self.get_db_connection() as conn:
             conn.cursor().executemany(sql, data_tuples)
+
+    def get_by_name(self, task_name: str) -> Optional[Dict[str, Any]]:
+        sql = "SELECT * FROM tb_task_tmpl WHERE name = ?"
+        with self.get_db_connection() as conn:
+            row = conn.execute(sql, (task_name,)).fetchone()
+            return self.dict_from_row(row)
 
     # ✅ 新增快捷方法：单独更新起始节点（UI配置节点后调用，最常用）
     def update_start_node_id(self, task_tmpl_id: int, start_node_id: int) -> bool:
@@ -149,10 +155,10 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_tmpl_business_type ON tb_task_tmpl(busine
 
         # 拼接筛选条件
         if business_type and business_type.strip():
-            where_conditions.append("business_type = ?")
+            where_conditions.append("t1.business_type = ?")
             params.append(business_type.strip())
         if name and name.strip():
-            where_conditions.append("name LIKE ?")
+            where_conditions.append("t1.name LIKE ?")
             params.append(f"%{name.strip()}%")
 
         if where_conditions:

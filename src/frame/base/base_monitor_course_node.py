@@ -15,7 +15,6 @@ class BaseMonitorCourseTaskNode(BasePYNode):
     课程监控基类：封装通用监控逻辑，开放业务扩展接口
     子类只需实现抽象方法，即可快速开发课程监控节点
     """
-
     def __init__(self, driver, user_manager, global_config: Dict[str, Any],
                  task_config: Dict[str, Any],
                  node_config: Dict[str, Any],

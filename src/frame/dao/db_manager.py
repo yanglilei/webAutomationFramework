@@ -8,6 +8,7 @@ from src.frame.common.decorator.singleton import singleton
 from src.frame.dao.base_db import BaseDB
 from src.frame.dao.data_dict_dao import DataDictDAO
 from src.frame.dao.project_dao import ProjectDAO
+from src.frame.dao.scheduled_task_dao import ScheduledTaskDAO
 from src.frame.dao.task_batch_dao import TaskBatchDAO
 from src.frame.dao.task_tmpl_dao import TaskTmplDAO
 from src.frame.dao.task_node_mapping_dao import TaskTmplNodeMappingDAO
@@ -28,6 +29,7 @@ class DBManager(BaseDB):
         self.data_dict_dao = DataDictDAO(logger)
         self.task_batch_dao = TaskBatchDAO(logger)
         self.action_dao = ActionDAO(logger)
+        self.scheduled_task_dao = ScheduledTaskDAO(logger)
 
     def get_init_sql(self):
         return "select 1;"

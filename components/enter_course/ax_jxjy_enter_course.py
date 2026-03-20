@@ -1,13 +1,12 @@
 import asyncio
 import random
 import re
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from random import random
 from typing import Tuple, List, Dict, Any
 
-from playwright.sync_api import Page, Locator
+from playwright.async_api import Page, Locator
 
 from src.frame.base.base_enter_course_node import BaseEnterCourseTaskNode
 from src.utils.sys_path_utils import SysPathUtils
@@ -69,7 +68,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
                     self.logger.error("进入工作空间异常")
                     return False, "进入工作空间异常"
 
-        time.sleep(3)
+        await asyncio.sleep(3)
         # 关闭首页
         self.workspace_window_handler = self.get_latest_window()
         await self.switch_to_latest_window()
@@ -100,7 +99,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
         await self.switch_to_latest_window()
         # 处理学习诚信承诺书
         await self.handle_promission_tips()
-        time.sleep(1)
+        await asyncio.sleep(1)
         # 获取课程名称
         course_name = await self.get_course_name()
         # 点击第一个视频开始学习
@@ -339,7 +338,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
         max_wait_count = 10
         # 最多等待10秒
         while max_wait_count > 0:
-            time.sleep(1)
+            await asyncio.sleep(1)
             if len(self.get_windows()) == 3:
                 ret = True
                 break
@@ -355,10 +354,12 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def handle_promission_tips(self):
         tips_elem = await self.get_elem_with_wait_by_xpath(3, "//div[@class='popDiv course-pop']")
         if tips_elem:
-            await self.get_elem_by_xpath("//input[@class='agreeButton']").click()
+            btn_agree_elem = await self.get_elem_by_xpath("//input[@class='agreeButton']")
+            await btn_agree_elem.click()
             await asyncio.sleep(1)
             # time.sleep(1)
-            await self.get_elem_by_xpath("//a[contains(@class, 'agreeStart') and text()='开始学习'][2]").click()
+            start_learn_elem = await self.get_elem_by_xpath("//a[contains(@class, 'agreeStart') and text()='开始学习'][2]")
+            await start_learn_elem.click()
 
     async def get_course_name(self):
         course_name_elem = await self.get_elem_with_wait_by_xpath(10, "//dd[@class='textHidden colorDeep']")
