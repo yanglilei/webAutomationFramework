@@ -107,7 +107,7 @@ class WebDriverManager:
                 # chrome_pid = context.browser.process.pid if context.browser and context.browser.process else 0
 
             # 2. 应用stealth
-            await self.setup_stealth_for_context(context)
+            # await self.setup_stealth_for_context(context)
             # 3. 非无痕模式下如果没有页面，才创建新页面（避免重复创建）
             if not context.pages:
                 page = await context.new_page()
@@ -121,7 +121,8 @@ class WebDriverManager:
                 self._global_browser = await self._global_playwright.chromium.connect_over_cdp(
                     f"http://127.0.0.1:{driver_config.hook_port}")
             context = await self._global_browser.new_context(**await self._set_context_options(driver_config))
-
+            if not context.pages:
+                await context.new_page()
         # 封装返回信息
         driver_info = {
             'context': context,
@@ -212,6 +213,7 @@ class WebDriverManager:
         args = []
         launch_options = {
             "headless": driver_config.headless_mode == "1",
+            "ignore_default_args": ["--enable-automation"],
             "args": args,
         }
 
@@ -239,6 +241,7 @@ class WebDriverManager:
                 "--disable-popup-blocking",  # 禁用弹窗拦截（防止新窗口被拦截）
                 # 核心反检测（必须保留）
                 "--disable-blink-features=AutomationControlled",
+                # "--enable-automation",
                 # 通用兼容参数
                 # "--no-sandbox",
                 # "--disable-dev-shm-usage",
@@ -319,6 +322,8 @@ class WebDriverManager:
             "locale": "zh-CN",  # 语言设置
             "timezone_id": "Asia/Shanghai",  # 时区设置（可选，根据需要调整）
             "permissions": ["geolocation"],  # 只授予必要权限
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+            "bypass_csp": True,
         }
         if driver_config.browser_type == "0":
             # chrome的窗口最大化配置
@@ -682,6 +687,8 @@ class WebDriverManagerBak:
             "timezone_id": "Asia/Shanghai",
             # 最大化窗口的配置
             "no_viewport": True,
+            "ignore_https_errors": True,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         }
         return context_options
 

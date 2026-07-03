@@ -16,6 +16,7 @@ class UITaskBatch(BaseTableWidget):
         self.task_batch_dao = db.task_batch_dao
         self.project_dao = db.project_dao
         self.task_tmpl_dao = db.task_tmpl_dao
+        # self.execute_status_mapping = {0: "<span style='color: green;font-weight:bold'>待运行</span>", 1: "<span style='color: #3B82F6;font-weight:bold'>运行中</span>", 2: "<span style='color: black;font-weight:bold'>已结束</span>", 3: "<span style='color: #F97316;font-weight:bold'>已取消</span>"}
         self.execute_status_mapping = {0: "待运行", 1: "运行中", 2: "已结束", 3: "已取消"}
         self.business_type_mapping = {"learning": "学习", "exam": "考试", "login": "登录", "score": "查询成绩",
                                       "choose_course": "选课", "upload": "上传作业", "download": "下载证书",
@@ -70,10 +71,12 @@ class UITaskBatch(BaseTableWidget):
 
     def get_records(self, condition: dict, page=1, page_size=0) -> Tuple[List[dict], int]:
         if page_size > 0:
-            return self.task_batch_dao.get_page_data(page, page_size,
+            records, count = self.task_batch_dao.get_page_data(page, page_size,
                                                      condition.get("batch_no"),
                                                      condition.get("project_name"),
-                                                     run_mode=condition.get("run_mode"))
+                                                     run_mode=condition.get("run_mode"),
+                                                     execute_status=condition.get("execute_status"))
+            return records, count
         else:
             records = self.task_batch_dao.get_all()
             return records, len(records)
@@ -127,30 +130,30 @@ class UITaskBatch(BaseTableWidget):
         task_tmpl_options = [(task_tmpl.get("name"), task_tmpl.get("id")) for task_tmpl in task_tmpls]
 
         metadata = {
-                    # "project_name": EditableField("project_name", "select", project_options, "project_id",
-                    #                             self.create_related_value_getter(project_options)),
-                    "project_name": EditableField("project_name", "select", project_options, "project_id"),
-                    "task_tmpl_name": EditableField("task_tmpl_name", "select", task_tmpl_options,
-                                                           "task_tmpl_id"),
-                    "business_type": EditableField("business_type", "select",
-                                                   [(value, key) for key, value in
-                                                             self.business_type_mapping.items()]),
-                    "user_mode": EditableField("user_mode", "select",
-                                               [(value, key) for key, value in
-                                                         self.user_mode_mapping.items()]),
-                    "run_mode": EditableField("run_mode", "select",
-                                              [(value, key) for key, value in self.run_mode_mapping.items()]),
-                    "execute_status": EditableField("execute_status", "select",
-                                                    [(value, key) for key, value in
-                                                              self.execute_status_mapping.items()]),
-                    "user_info": EditableField("user_info", "textedit"),
-                    "global_config": EditableField("global_config", "textedit"),
-                    "queue_time": EditableField("queue_time", "label"),
-                    "batch_no": EditableField("batch_no", "label"),
-                    "total_user": EditableField("total_user", "label"),
-                    "success_user": EditableField("success_user", "label"),
-                    "fail_user": EditableField("fail_user", "label"),
-                    }
+            # "project_name": EditableField("project_name", "select", project_options, "project_id",
+            #                             self.create_related_value_getter(project_options)),
+            "project_name": EditableField("project_name", "select", project_options, "project_id"),
+            "task_tmpl_name": EditableField("task_tmpl_name", "select", task_tmpl_options,
+                                            "task_tmpl_id"),
+            "business_type": EditableField("business_type", "select",
+                                           [(value, key) for key, value in
+                                            self.business_type_mapping.items()]),
+            "user_mode": EditableField("user_mode", "select",
+                                       [(value, key) for key, value in
+                                        self.user_mode_mapping.items()]),
+            "run_mode": EditableField("run_mode", "select",
+                                      [(value, key) for key, value in self.run_mode_mapping.items()]),
+            "execute_status": EditableField("execute_status", "select",
+                                            [(value, key) for key, value in
+                                             self.execute_status_mapping.items()]),
+            "user_info": EditableField("user_info", "textedit"),
+            "global_config": EditableField("global_config", "textedit"),
+            "queue_time": EditableField("queue_time", "label"),
+            "batch_no": EditableField("batch_no", "label"),
+            "total_user": EditableField("total_user", "label"),
+            "success_user": EditableField("success_user", "label"),
+            "fail_user": EditableField("fail_user", "label"),
+        }
 
         return metadata
 
@@ -197,8 +200,14 @@ class UITaskBatch(BaseTableWidget):
         pass
 
     def get_field_mapping(self) -> Dict:
+        execute_status_mapping = {}
+        execute_status_mapping[0] = f"<span style='color: green;font-weight:bold'>{self.execute_status_mapping.get(0)}</span>"
+        execute_status_mapping[1] = f"<span style='color: #3B82F6;font-weight:bold'>{self.execute_status_mapping.get(1)}</span>"
+        execute_status_mapping[2] = f"<span style='color: black;font-weight:bold'>{self.execute_status_mapping.get(2)}</span>"
+        execute_status_mapping[3] = f"<span style='color: #F97316;font-weight:bold'>{self.execute_status_mapping.get(3)}</span>"
+
         return {
-            "execute_status": self.execute_status_mapping,
+            "execute_status": execute_status_mapping,
             "run_mode": self.run_mode_mapping,
             "user_mode": self.user_mode_mapping,
             "project_id": self.project_mapping,
@@ -212,7 +221,9 @@ class UITaskBatch(BaseTableWidget):
         #         }
 
     def get_query_fields(self) -> List[QueryField]:
-        return [QueryField('text', '项目名称','project_name'), QueryField('text', '批次号','batch_no')]
+        return [QueryField('text', '项目名称', 'project_name'), QueryField('text', '批次号', 'batch_no'),
+                QueryField('select', '状态', 'execute_status',
+                           async_func=lambda: [("待运行", 0), ("运行中", 1), ("已结束", 2), ("已取消", 3)])]
 
     def init_project_options(self):
         records = self.project_dao.get_all()

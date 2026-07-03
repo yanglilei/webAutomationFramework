@@ -15,6 +15,10 @@ from src.utils.sys_path_utils import SysPathUtils
 
 @dataclass(init=False)
 class SMTEDULogin(BaseLoginTaskNode):
+    """
+    智慧平台登录
+    https://auth.smartedu.cn/uias/login
+    """
     slider_img_path: str = ""
     background_img_path: str = ""
 
@@ -169,7 +173,7 @@ class SMTEDULogin(BaseLoginTaskNode):
                 move_x = int(x / ratio - 30 / ratio * 2.4)
                 page = self.get_current_page()
                 await SliderVerifyUtils.move_slider_slowly_pw_version(move_x, btn_slider, page)
-                await asyncio.sleep(2)
+                await asyncio.sleep(6)
 
                 back_ground_img_elem = await self.get_elem_with_wait_by_xpath(2, "//div[@id='slideBg']",
                                                                               iframe=captcha_iframe)

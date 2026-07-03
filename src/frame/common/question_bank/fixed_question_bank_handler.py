@@ -6,6 +6,7 @@ from src.frame.common.question_bank.base_question_bank import BaseQuestionBankHa
 class FixedQuestionBankHandler(BaseQuestionBankHandler):
     """
     固定答案的题库。
+    类型=1
     示例题库配置如下：
     ------
     ax_jx_小学语文 = B,B,B,B,B,B,B,AC,B,B,ABC,B,C,B,B,B,B,C,B,C

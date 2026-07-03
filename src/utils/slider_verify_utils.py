@@ -4,7 +4,7 @@ import time
 
 import cv2
 import numpy as np
-from playwright.async_api import Locator, Mouse
+from playwright.async_api import Locator
 
 
 class SliderVerifyUtils:
@@ -101,7 +101,8 @@ class SliderVerifyUtils:
         ac.release().perform()
         time.sleep(random.uniform(0.1, 0.2))
 
-    def cal_gap_x_distance_with_gap_img(self, background_img_path: str, gap_img_path: str):
+    @classmethod
+    def cal_gap_x_distance_with_gap_img(cls, background_img_path: str, gap_img_path: str):
         """
         计算背景图片上的缺口距离（相对于最左侧）
         用缺口图片和背景图片做对比的方式
@@ -130,23 +131,89 @@ class SliderVerifyUtils:
         return distance
 
     @classmethod
-    async def move_slider_slowly_pw_version(cls, move_x: int, btn_slider: Locator, page):
+    def calculate_slider_distance(cls, bg_img_path, slider_png_path):
+        # 1. 读取背景图（普通彩色图）
+        bg_img = cv2.imdecode(np.fromfile(bg_img_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        if bg_img is None:
+            raise FileNotFoundError(f"背景图读取失败，请检查路径：{bg_img_path}")
+
+        # 2. 读取PNG滑块，保留透明通道 (IMREAD_UNCHANGED 会读取4通道：BGR+Alpha)
+        slider_img = cv2.imdecode(np.fromfile(slider_png_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        if slider_img is None:
+            raise FileNotFoundError("滑块PNG读取失败，请检查路径")
+
+        # 分离颜色通道和透明通道
+        slider_bgr = slider_img[:, :, :3]  # BGR三通道颜色
+        slider_alpha = slider_img[:, :, 3]  # Alpha透明通道（0=完全透明，255=完全不透明）
+
+        # 3. 通过Alpha通道提取滑块有效区域（去掉周围透明空白）
+        # 找到所有非透明像素的坐标
+        non_transparent = np.where(slider_alpha > 10)  # 阈值10，过滤半透明边缘
+        if len(non_transparent[0]) == 0:
+            raise ValueError("滑块图片无有效内容")
+
+        # 计算有效区域的外接矩形
+        y_min, y_max = non_transparent[0].min(), non_transparent[0].max()
+        x_min, x_max = non_transparent[1].min(), non_transparent[1].max()
+
+        # 4. 去除黄色描边（向内收缩像素，消除边框对匹配的干扰）
+        # 黄色描边大概3-5像素，根据实际调整，这里设为4
+        border_padding = 0
+        y_min += border_padding
+        y_max -= border_padding
+        x_min += border_padding
+        x_max -= border_padding
+
+        # 裁剪出滑块的有效图案（不带透明、不带黄色边框）
+        slider_valid = slider_bgr[y_min:y_max, x_min:x_max]
+        slider_valid_gray = cv2.cvtColor(slider_valid, cv2.COLOR_BGR2GRAY)
+        h, w = slider_valid_gray.shape[:2]
+
+        # 5. 背景图转灰度
+        bg_gray = cv2.cvtColor(bg_img, cv2.COLOR_BGR2GRAY)
+
+        # 6. 边缘检测（只匹配形状，消除颜色/亮度差异，适配滑块验证码场景）
+        bg_edge = cv2.Canny(bg_gray, 60, 160)
+        slider_edge = cv2.Canny(slider_valid_gray, 60, 160)
+
+        # 7. 模板匹配
+        # 使用归一化相关系数匹配，值越大匹配度越高
+        # result = cv2.matchTemplate(bg_edge, slider_edge, cv2.TM_CCOEFF_NORMED)
+        result = cv2.matchTemplate(slider_valid_gray, bg_gray, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        # 最佳匹配的左上角坐标
+        top_left_x, top_left_y = max_loc
+        bottom_right = (top_left_x + w, top_left_y + h)
+
+        # 8. 计算拖动距离（默认滑块初始在最左侧，距离就是缺口的x坐标）
+        drag_distance = top_left_x
+
+        # 保存匹配结果图（方便验证）
+        # cv2.rectangle(bg_img, (top_left_x, top_left_y), bottom_right, (0, 0, 255), 2)
+        # cv2.imwrite("match_result.png", bg_img)
+        return drag_distance
+
+    @classmethod
+    async def move_slider_slowly_pw_version(cls, move_x: int, btn_slider: Locator, page, free_interval=0.2):
         """
         模拟滑块缓慢移动（确保所有移动距离为整数，适配move_by_offset要求）
+        pw=playwright
         :param move_x: 总移动距离（x方向，整数）
         :param btn_slider: 滑块元素（WebElement）
-        :param ac: ActionChains实例
+        :param page: Page实例
+        :param free_interval: 滑块对齐后多少秒释放。有些滑块对齐后不宜太快释放，有些滑块则要快速释放
         """
         mouse = page.mouse
         box = await btn_slider.bounding_box()
         start_x = box["x"]
         start_y = box["y"]
-        await mouse.move(start_x+1, start_y+1)
+        await mouse.move(start_x + 1, start_y + 1)
         # await btn_slider.hover(position={"x": 0.0, "y": 0.0})
         # await mouse.move(start_x, start_y)
         await mouse.down()
         # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
-        await asyncio.sleep(1) # 按住后停顿
+        await asyncio.sleep(1)  # 按住后停顿
         # 总步数
         steps = max(12, int(abs(move_x) / 10))  # 至少20步，距离越大步数越多
         current_x = 0  # 当前累计移动x距离（整数）
@@ -192,8 +259,9 @@ class SliderVerifyUtils:
             # ac.move_by_offset(final_adjust, 0).perform()
             await mouse.move(start_x + move_x, start_y)
             # time.sleep(0.05)
-            await asyncio.sleep(0.2)
+            # await asyncio.sleep(0.05)
+            await asyncio.sleep(free_interval)
 
         # 释放滑块
         await mouse.up()
-        await asyncio.sleep(4)  # 等待2秒，让验证通过
+        # await asyncio.sleep(4)  # 等待2秒，让验证通过

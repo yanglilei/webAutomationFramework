@@ -232,23 +232,24 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
             conn.execute(sql, (action_id, batch_ids))
 
     def get_total_count(self, batch_no: Optional[str] = None, project_name: Optional[str] = None,
-                        project_id: Optional[int] = None, run_mode: Optional[int] = None) -> int:
+                        project_id: Optional[int] = None, run_mode: Optional[int] = None, execute_status: Optional[int] = None) -> int:
         """
         获取任务批次总条数
         :param batch_no: 可选，按批次号筛选，支持全模糊查询，None则查全部
         :param project_name: 可选，按项目名称筛选，支持模糊查询，None则查全部
         :param project_id: 可选，按项目ID筛选，None则查全部
         :param run_mode: 可选，运行模式，None则查全部
+        :param execute_status: 可选，运行模式，None则查全部
         """
         sql = "SELECT COUNT(*) AS total FROM tb_task_batch"
-        where_criteria, params = self.create_query_criteria(batch_no, project_name, project_id, run_mode)
+        where_criteria, params = self.create_query_criteria(batch_no, project_name, project_id, run_mode, execute_status)
         sql += where_criteria
         with self.get_db_connection() as conn:
             row = conn.execute(sql, params).fetchone()
         return row["total"] if row else 0
 
     def create_query_criteria(self, batch_no: Optional[str] = None, project_name: Optional[str] = None,
-                              project_id: Optional[int] = None, run_mode: Optional[int] = None) -> Tuple[
+                              project_id: Optional[int] = None, run_mode: Optional[int] = None, execute_status: Optional[int] = None) -> Tuple[
         str, List[Any]]:
         """
         创建查询条件
@@ -256,6 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         :param project_name: 可选，按项目名称筛选，支持全模糊查询，None则查全部
         :param project_id: 可选，按项目ID筛选，None则查全部
         :param run_mode: 可选，运行模式，None则查全部
+        :param execute_status: 可选，运行状态，None则查全部
         :return: Tuple[str, List[Any]] (where子句, 查询参数列表)
         """
         where_conditions = []
@@ -273,10 +275,13 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         if run_mode is not None:
             where_conditions.append("run_mode=?")
             params.append(f"{run_mode}")
+        if execute_status is not None:
+            where_conditions.append("execute_status=?")
+            params.append(f"{execute_status}")
 
         sql = ""
         if where_conditions:
-            sql += " WHERE " + " ".join(where_conditions)
+            sql += " WHERE " + "and ".join(where_conditions)
 
         return sql, params
 
@@ -286,7 +291,8 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
                          batch_no: Optional[str] = None,
                          project_name: Optional[str] = None,
                          project_id: Optional[int] = None,
-                         run_mode: Optional[int] = None) -> List[Dict]:
+                         run_mode: Optional[int] = None,
+                         execute_status: Optional[int] = None) -> List[Dict]:
         """
         分页查询任务批次列表（核心翻页方法）
         :param page_num: 当前页码，默认1（前端UI通用规则，从1开始）
@@ -295,6 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         :param project_name: 可选，按项目名称筛选，支持模糊查询，None则查全部
         :param project_id: 可选，按项目ID筛选，None则查全部
         :param run_mode: 可选，运行模式，None则查全部
+        :param execute_status: 可选，运行模式，None则查全部
         :return: 当前页任务数据列表
         """
         # 边界值校验（防异常）
@@ -304,7 +311,7 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         offset = (page_num - 1) * page_size
 
         sql = "SELECT * FROM tb_task_batch"
-        where_criteria, params = self.create_query_criteria(batch_no, project_name, project_id, run_mode)
+        where_criteria, params = self.create_query_criteria(batch_no, project_name, project_id, run_mode, execute_status)
         sql += where_criteria
 
         # 拼接分页+排序（按创建时间倒序，最新任务在前，符合业务习惯）
@@ -322,7 +329,8 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
                       batch_no: Optional[str] = None,
                       project_name: Optional[str] = None,
                       project_id: Optional[int] = None,
-                      run_mode: Optional[int] = None
+                      run_mode: Optional[int] = None,
+                      execute_status: Optional[int] = None
                       ) -> Tuple[List[Dict[str, Any]], int]:
         """
         ✅ 对外统一调用【推荐】- 标准化分页数据返回（Qt UI直接绑定）
@@ -332,11 +340,12 @@ CREATE INDEX IF NOT EXISTS idx_tb_task_batch_status ON tb_task_batch(execute_sta
         :param project_name: 可选，按项目名称筛选，支持模糊查询，None则查全部
         :param project_id: 可选，按项目ID筛选，None则查全部
         :param run_mode: 可选，运行模式，None则查全部
+        :param execute_status: 可选，运行模式，None则查全部
         :return: 包含总条数、总页数、分页参数、数据的完整字典
         """
-        total_count = self.get_total_count(batch_no, project_name, project_id, run_mode)  # 总条数
+        total_count = self.get_total_count(batch_no, project_name, project_id, run_mode, execute_status)  # 总条数
         # total_page = math.ceil(total_count / page_size) if total_count > 0 else 1  # 总页数
-        task_list = self.get_list_by_page(page_num, page_size, batch_no, project_name, project_id, run_mode)  # 当前页数据
+        task_list = self.get_list_by_page(page_num, page_size, batch_no, project_name, project_id, run_mode, execute_status)  # 当前页数据
         return task_list, total_count
         # 标准化返回格式（UI端无需二次处理，直接取值）
         # return {

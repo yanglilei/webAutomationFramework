@@ -37,13 +37,13 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
         # 处理“我还在听”
         await self._handle_i_am_here()
         # 处理被暂停，莫名的
-        await self._handle_pause()
+        # await self._handle_pause()
 
         total_time_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyBestMinutesNumber']")
         learned_time_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyMinutesNumber']")
         if total_time_elem and learned_time_elem:
             self.logger.info(
-                f"【{self.course_name}】，总时间：{await total_time_elem.text_content()}分钟，已学习时间：{await learned_time_elem.text_content()}分钟")
+                f"【{self.course_name}】总时间：{await total_time_elem.text_content()}分钟，已学习时间：{await learned_time_elem.text_content()}分钟")
 
     async def _is_current_course_finished(self):
         finished_tips_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='bestMinutesTips']", False)
@@ -51,7 +51,7 @@ class HXJYWNoPlay(BaseMonitorCourseTaskNode):
 
     async def _handle_content_pause_tips(self):
         confirm_btn = await self.get_elem_by_xpath(
-            "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！'] | //div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！']")
+            "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！'] | //div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频暂停')]]//a[text()='Ok，我知道了！'] | //div[contains(@class,'layui-layer layui-layer-dialog')]//a[text()='Ok，我知道了！']")
 
         if confirm_btn and await confirm_btn.is_enabled() and await confirm_btn.is_visible():
             try:

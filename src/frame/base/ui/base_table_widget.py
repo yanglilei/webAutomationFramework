@@ -3,6 +3,7 @@
 """
 import functools
 import os
+import re
 from abc import abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -450,14 +451,13 @@ class BaseTableWidget(QWidget):
         self.query_widgets = {}  # 搜索条件
         self.main_layout = QVBoxLayout()  # 主布局
         self.table = QTableWidget()  # 表格控件
-
-        ###### 初始化UI ######
-        self.init_ui()  # 初始化UI
-
         ###### 异步加载数据 ######
         self.current_page_rows = set()  # 新增：记录当前页行号
         self.async_task_scheduler = AsyncTaskScheduler()  # 异步DB任务调度器
         self.first_load_data()  # 第一次加载数据
+
+        ###### 初始化UI ######
+        self.init_ui()  # 初始化UI
 
         ###### 监听信号 ######
         self.update_finished.connect(self.on_update_result)
@@ -1140,11 +1140,17 @@ class BaseTableWidget(QWidget):
                     value = ""
                 else:
                     value = str(value)
-                # value = str(data.get(field_name, ""))
-                item = QTableWidgetItem(value)
-                # item.setFlags(item.flags() | Qt.ItemIsSelectable)  # 确保可选择
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # 禁用编辑
-                self.table.setItem(row, col, item)
+
+                if self.is_rich_text(value):
+                    label = QLabel(value)
+                    # 放入单元格
+                    self.table.setCellWidget(row, col, label)
+                else:
+                    # value = str(data.get(field_name, ""))
+                    item = QTableWidgetItem(value)
+                    # item.setFlags(item.flags() | Qt.ItemIsSelectable)  # 确保可选择
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # 禁用编辑
+                    self.table.setItem(row, col, item)
 
         self.total_pages = (total + self.page_size - 1) // self.page_size
         self.lbl_total.setText(f"共{total}条")
@@ -1154,6 +1160,20 @@ class BaseTableWidget(QWidget):
         self.current_page_rows = set(range(self.table.rowCount()))
         # 刷新表格时，清空已经选中的行
         self.selected_rows.clear()
+
+    def is_rich_text(self, text: str) -> bool:
+        """
+        判断字符串是否为Qt可识别的富文本(包含HTML标签)
+        :param text: 待检测文本
+        :return: True=富文本(含html标签) False=纯文本
+        """
+        if not isinstance(text, str) or len(text.strip()) == 0:
+            return False
+
+        # 匹配所有 <xxx> HTML标签 正则
+        html_tag_pattern = re.compile(r'<\/?[a-zA-Z0-9]+(\s+.*?)?>')
+        match = html_tag_pattern.search(text)
+        return match is not None
 
     def set_row_background(self, row_index, color: QColor):
         """

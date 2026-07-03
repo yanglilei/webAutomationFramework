@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from sympy import false
+
 from src.utils.process_utils import ProcessUtils
 
 sys.coinit_flags = 2
@@ -13,13 +15,14 @@ from PyQt5.QtCore import Qt, pyqtSignal, QSharedMemory, QSystemSemaphore, QTimer
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QListWidget, QStackedWidget,
-    QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QStyleFactory, QPushButton, QTextEdit, QMessageBox, QStatusBar
+    QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QStyleFactory, QPushButton, QTextEdit, QMessageBox, QStatusBar,
+    QTextBrowser, QGroupBox
 )
 
 from src.frame.common import constants
 from src.frame.common.activate_manager import ActivationManager
 from src.frame.common.common import release
-from src.frame.common.qt_log_redirector import LOG
+from src.frame.common.qt_log_redirector import LOG, qt_logger
 from src.ui.config_center.ui_config_center import ConfigCenterWidget
 from src.ui.running_center.ui_running_center import RunningCenterWidget
 from src.utils.sys_path_utils import SysPathUtils
@@ -53,6 +56,22 @@ class ConfigCenterPage(BasePage):
         ly_main.addWidget(ConfigCenterWidget())
         self.setLayout(ly_main)
 
+@dataclass(init=false)
+class LogPage(BasePage):
+    tb_log_info: QTextBrowser = None
+    gb_log_info: QGroupBox = None
+
+    def init_ui(self):
+        self.tb_log_info = QTextBrowser()
+        self.tb_log_info.document().setMaximumBlockCount(1000)
+        self.gb_log_info = QGroupBox("日志")
+        qt_logger.signal.connect(self.tb_log_info.append)
+        ly_login_info = QHBoxLayout()
+        ly_login_info.addWidget(self.tb_log_info)
+        self.gb_log_info.setLayout(ly_login_info)
+        ly_main = QHBoxLayout()
+        ly_main.addWidget(self.gb_log_info)
+        self.setLayout(ly_main)
 
 @dataclass(init=False)
 class RunningCenterPage(BasePage):
@@ -263,7 +282,7 @@ class MainWindow(QMainWindow):
         # 是否正在运行，辅助限制不能多开！
         self.is_running = False
         # 运行限制
-        self.running_limit()
+        # self.running_limit()
         # 激活管理器
         self.activation_manager = ActivationManager(self, constants.APP_NAME, constants.IS_NEED_ACTIVATION)
         self.status_bar = None  # 状态栏
@@ -273,6 +292,7 @@ class MainWindow(QMainWindow):
         self.activation_page = None  # 激活页面
         self.config_center_page = None  # 配置配置页面
         self.running_center_page: Optional[RunningCenterPage] = None  # 运行中心页面
+        self.log_page: Optional[LogPage] = None  # 日志页面
         self.nav_widget = None  # 右侧堆叠窗口
         self.stacked_widget = None  # 左侧导航栏
         self.setWindowTitle(f"{self.app_name}V{self.version}")
@@ -512,6 +532,7 @@ class MainWindow(QMainWindow):
         nav_items = [
             "🔆配置中心",
             "️🔥运行中心",
+            "📒运行日志",
         ]
         if self.is_need_activate:
             nav_items.append("🔑激  活")
@@ -536,6 +557,7 @@ class MainWindow(QMainWindow):
         self.running_center_page = RunningCenterPage()
         self.running_center_page.running_status_refresh_signal.connect(self.update_running_indicator)
         # self.running_center_page.running_status_refresh_signal.connect(self.resource_monitor.free_resource)
+        self.log_page = LogPage()
 
         self.activation_page = ActivationPage()
         self.activation_page.activation_status_changed.connect(self.on_activation_status_changed)
@@ -543,6 +565,8 @@ class MainWindow(QMainWindow):
         # 添加到堆叠窗口
         stacked_widget.addWidget(self.config_center_page)
         stacked_widget.addWidget(self.running_center_page)
+        stacked_widget.addWidget(self.log_page)
+
         stacked_widget.addWidget(self.activation_page)
 
         # 绑定页面消息信号（示例：页面向主窗口发送消息）

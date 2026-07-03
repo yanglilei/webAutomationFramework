@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS tb_action (
 
         sql = ""
         if where_conditions:
-            sql += " WHERE " + " ".join(where_conditions)
+            sql += " WHERE " + "and ".join(where_conditions)
 
         return sql, params
 

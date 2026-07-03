@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Any
 
 from playwright.sync_api import Locator
+
 from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
 
 
@@ -12,14 +13,17 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
     """
     海西教育网正常版，需要播放学完全部视频和文档
     """
-    project_code: str = ""  # 项目编码
+    version: str = ""  # 海西版本，默认为2025版，代码：hxwysqy2025
     content_name: str = ""  # 目录名称
     is_cur_content_contains_video: bool = False  # 当前目录下是否有视频
 
-    def handle_prev_output(self, prev_output: Dict[str, Any]):
-        project_code = prev_output.get("project_code", "")
-        if project_code and project_code.strip():
-            self.project_code = project_code.strip()
+    async def handle_prev_output(self, prev_output: Dict[str, Any]):
+        await super().handle_prev_output(prev_output)
+        version = prev_output.get("version", "")
+        if version and version.strip():
+            self.version = version.strip()
+        else:
+            self.version = "hxwysqy2025"
 
     async def single_poll_monitor(self):
         # 处理弹窗大问题，各种弹窗！先处理弹窗问题，免得弹窗掩盖了课程时间，导致课程时间取不到
@@ -41,36 +45,33 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
                 # 读完之后需要点击“OK，我知道了！”按钮
                 await self._handle_content_finished_tips()
                 self.logger.info(
-                    "用户【%s】【%s】学习完成，准备切换到一个目录..." % (self.username_showed, self.content_name))
+                    "【%s】学习完成，准备切换到一个目录..." % self.content_name)
                 await self._switch_to_next_content()
             else:
                 if not total_time:
                     # 没有获取到时间，刷新页面
-                    self.logger.info("用户【%s】【%s】没有获取到时间，重启！" % (self.username_showed, self.content_name))
+                    self.logger.info("【%s】没有获取到时间，重启！" % self.content_name)
                     self.terminate("视频没有获取到时间，需重启！")
                 else:
                     # 有可能存在一种情况：播放时间和总时间不相等，但是弹出了课程结束的提示。
                     if await self._handle_content_finished_tips():
-                        self.logger.info("用户【%s】【%s】学习完成，准备切换到一个目录..." % (
-                            self.username_showed, self.content_name))
+                        self.logger.info("【%s】学习完成，准备切换到一个目录..." % self.content_name)
                         await self._switch_to_next_content()
                     else:
                         await self._handle_pause()
                         # 当前视频未结束
-                        self.logger.info("用户【%s】【%s】总时长%s，已学习%s" % (
-                            self.username_showed, self.content_name, total_time, played_time))
+                        self.logger.info("【%s】总时长%s，已学习%s" % (self.content_name, total_time, played_time))
         else:
             # 挂机，等时间满足
             learned_time_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='courseStudyMinutesNumber']")
             finished_tips_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='bestMinutesTips']", False)
             if finished_tips_elem and await finished_tips_elem.is_visible():
                 # 课程已学完
-                self.logger.info("用户【%s】【%s】中达到最大学习时间，跳过学习" % (self.username_showed, self.course_name))
+                self.logger.info("【%s】中达到最大学习时间，跳过学习" % self.course_name)
                 self.terminate("已学完！")
             else:
                 # 视频都学完了，但是时间未满足！
-                self.logger.info("用户【%s】【%s】（挂），已学习时间：%s分钟" % (
-                    self.username_showed, self.course_name, await learned_time_elem.text_content()))
+                self.logger.info("【%s】（挂），已学习时间：%s分钟" % (self.course_name, await learned_time_elem.text_content()))
 
     async def _is_current_course_finished(self):
         finished_tips_elem = await self.get_elem_with_wait_by_xpath(3, "//span[@id='bestMinutesTips']", False)
@@ -94,7 +95,7 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
     async def _handle_content_finished_tips(self):
         ret = False
         xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')][.//*[contains(text(),'视频已播放完成')]]//a[text()='Ok，我知道了！']"
-        if "hxwysqy2025" in self.project_code:
+        if "hxwysqy2025" in self.version:
             xpath = "//div[contains(@class,'layui-layer layui-layer-dialog')]//a[text()='Ok，我知道了！']"
 
         confirm_btn = await self.get_elem_by_xpath(xpath)
@@ -108,7 +109,8 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         return ret
 
     async def prepare_before_poll_monitor_course(self):
-        self.content_name = await self._get_content_name(self._get_first_content())
+        await self.switch_to_window_by_url_key("course/intoSelectCourseVideo")
+        self.content_name = await self._get_content_name(await self._get_first_content())
         self.is_cur_content_contains_video = await self._is_cur_content_contains_video()
 
     async def _wait_for_shade_disappear(self):
@@ -125,7 +127,7 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         #         self.web_browser.find_element(By.XPATH, Constants.FJHX_VERIFY_CODE_INPUT_IN_ALERT_XPATH).send_keys(
         #             verify_code_val)
         #         self.web_browser.find_element(By.XPATH, Constants.FJHX_COMMIT_BTN_IN_ALERT_XPATH).click()
-        #         self.logger.info("用户【%s】处理“您还在认真学习吗？“弹窗成功" % self.username_showed)
+        #         self.logger.info("处理“您还在认真学习吗？“弹窗成功")
         # else:
         #     if continue_learn := self._get_i_am_here_alert():
         #         if continue_learn.is_displayed():
@@ -138,8 +140,9 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
             await (await self.get_elem_by_xpath(
                 "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']")).fill(
                 verify_code_val)
-            await (await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")).click()
-            self.logger.info("用户【%s】处理“您还在认真学习吗？“弹窗成功" % self.username_showed)
+            await (await self.get_elem_by_xpath(
+                "//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")).click()
+            self.logger.info("处理“您还在认真学习吗？“弹窗成功")
 
     async def _handle_pause(self):
         # 点击弹窗中的确认按钮之后，再点击播放按钮，视频才能正常播放
@@ -185,15 +188,16 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
             total_time = await self.execute_js(total_time_js)
         except:
             # 没有找到已经播放完的时间
-            self.logger.error("用户【%s】【%s】没有获取到时间，页面出现异常！" % (self.username_showed, self.content_name))
+            self.logger.error("【%s】没有获取到时间，页面出现异常！" % self.content_name)
         else:
             ret = played_time, total_time
         return ret
 
     async def _get_first_content(self):
-        if "hxwysqy2025" in self.project_code:
-            contents = await self.get_elems_with_wait_by_xpath(10,
-                                                         "(//li[contains(@class, 'isStudy')])[last()]//following::li[contains(@class, 'type_1')]")
+        if "hxwysqy2025" in self.version:
+            # contents = await self.get_elems_with_wait_by_xpath(10,
+            #                                                    "(//li[contains(@class, 'isStudy')])[last()]//following::li[contains(@class, 'type_1')]")
+            contents = await self.get_elems_with_wait_by_xpath(10, "//li[contains(@class, 'cur active')]//following::li")
             if contents:
                 first_content = contents[0]
                 if not await first_content.is_visible():
@@ -203,8 +207,8 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
                 return None
         else:
             first_content = await self.get_elem_with_wait_by_xpath(3,
-                                                             "//div[@class='course-list-con']//li[contains(@class, 'cur')]//a",
-                                                             False)
+                                                                   "//div[@class='course-list-con']//li[contains(@class, 'cur')]//a",
+                                                                   False)
             if first_content and not await first_content.is_visible():
                 await first_content.scroll_into_view_if_needed()
                 await asyncio.sleep(1)
@@ -214,14 +218,14 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
     async def _get_content_name(self, cur_content):
         ret = ""
         if not cur_content:
-            self.logger.error("用户【%s】没有获取到当前课程，页面出现异常！" % (self.username_showed,))
+            self.logger.info("没有获取到当前课程或无未完成的视频！")
             return ret
-        if "hxwysqy2025" in self.project_code:
+        if "hxwysqy2025" in self.version:
             ret = await cur_content.get_attribute("title")
         else:
             course_name_elem = await self.get_elem_with_wait_by_xpath(5, "//div[@class='course-info']//a")
             if not course_name_elem:
-                self.logger.error("用户【%s】没有获取到课程名称，页面出现异常！" % (self.username_showed,))
+                self.logger.error("没有获取到课程名称，页面出现异常！")
             else:
                 ret = await course_name_elem.text_content() + "(" + await cur_content.text_content() + ")"
         return ret
@@ -254,8 +258,8 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
 
     async def _get_next_content(self) -> Locator:
         # 返回第一个视频课程
-        if "hxwysqy2025" in self.project_code:
+        if "hxwysqy2025" in self.version:
             return await self.get_elem_with_wait_by_xpath(3,
-                                                    "(//li[contains(@class, 'type_1') and contains(@class, 'isStudy')])[last()]//following::li[contains(@class, 'type_1')]")
+                                                          "(//li[contains(@class, 'type_1') and contains(@class, 'isStudy')])[last()]//following::li[contains(@class, 'type_1')]")
         else:
             return await self._get_first_content()

@@ -2,12 +2,14 @@ import asyncio
 from dataclasses import dataclass
 from typing import Tuple
 
+from playwright.async_api import Page
+
 from src.frame.base.base_enter_course_node import BaseEnterCourseTaskNode
 
 
 @dataclass(init=False)
 class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
-    course_page_window_handler: str = ""
+    course_page_window_handler: Page = None
 
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
         # 等待跳转到首页
@@ -24,15 +26,13 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
         btn_enter_manager_center = await self.get_elem_with_wait_by_xpath(10, "//span[@class='glcenter']")
         # 点击管理中心，打开新的窗口
         await btn_enter_manager_center.click()
-        await self.switch_to_window(self.get_latest_window())
-        await asyncio.sleep(2)
-        # time.sleep(2)
+        await asyncio.sleep(3)  # 等待弹出新窗口
+        await self.switch_to_window_by_url_key("Manage/Index")
         tab_my_training = await self.get_elem_with_wait_by_xpath(10, "//a[text()='我的培训']")
         await tab_my_training.click()
         iframe_xpath = "//iframe[@name='iframe0']"
-        await self.wait_for_visible_by_xpath(10, iframe_xpath)
-        # self.switch_to_frame(iframe_xpath)
-        course_link = await self.get_elem_by_css("table#myassess tbody tr:nth-child(1) td:nth-child(1) a", iframe_xpath)
+        iframe = self.switch_to_frame(iframe_xpath)
+        course_link = await self.get_elem_with_wait_by_css(10, "table#myassess tbody tr:nth-child(1) td:nth-child(1) a", iframe=iframe)
         if not course_link:
             self.logger.error("未找到课程链接")
             return False, "未找到课程链接"
@@ -40,8 +40,8 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
         await course_link.click()
         # 等待新窗口打开
         await asyncio.sleep(2)
-        # time.sleep(2)
-        self.course_page_window_handler = self.get_latest_window()
+        await self.switch_to_window_by_url_key("SonCourseList")
+        self.course_page_window_handler = self.get_current_page()
         await self.close_other_windows(self.course_page_window_handler)
         return True, ""
 
@@ -71,7 +71,8 @@ class SAFEDUEnterCourse(BaseEnterCourseTaskNode):
             return False, "未找到未完成课程"
 
     async def handle_after_course_finished(self) -> Tuple[bool, str]:
-        await self.close_other_windows(self.course_page_window_handler)
+        btn_back = await self.get_elem_with_wait_by_xpath(3, "//a[@class='back-btn text-right']")
+        await btn_back.click()
         # 刷新页面
         await self.refresh()
         # 等待页面加载完成

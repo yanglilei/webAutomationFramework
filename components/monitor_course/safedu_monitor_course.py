@@ -3,6 +3,10 @@ from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
 
 class SAFEDUMonitorCourse(BaseMonitorCourseTaskNode):
 
+    async def prepare_before_poll_monitor_course(self):
+        speed_up_play_cmd = "document.querySelector('video.vjs-tech').playbackRate=16.0"
+        await self.execute_js(speed_up_play_cmd)
+
     async def single_poll_monitor(self):
         if await self.is_current_course_finished():
             self.terminate("已学完！")
@@ -25,20 +29,3 @@ class SAFEDUMonitorCourse(BaseMonitorCourseTaskNode):
         # else:
         #     return ""
         return await self.execute_js("document.querySelector('div.vjs-remaining-time-display').textContent")
-
-    async def handle_slider_bar(self):
-        slider_bar = await self.get_elem_by_xpath("//div[@class='handler handler_bg']")
-        if slider_bar and await slider_bar.is_enabled() and await slider_bar.is_visible():
-            box = await slider_bar.bounding_box()
-            window = self.get_latest_window()
-            x_pos = box["x"] + box["width"] / 2
-            y_pos = box["y"] + box["height"] / 2
-            mouse = window.mouse
-            await mouse.move_to(x=x_pos, y=y_pos)
-            await mouse.down()
-            await mouse.move(x_pos + 260, y_pos, 10)
-            await mouse.up()
-            await self.wait_for_disappeared_by_xpath(3, "//div[@class='handler handler_bg']")
-            self.logger.info(f"用户【{self.username_showed}】处理滑块成功")
-        else:
-            self.logger.info(f"用户【{self.username_showed}】没有处理滑块")

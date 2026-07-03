@@ -1,6 +1,4 @@
 import asyncio
-import json
-from asyncio import timeout
 from dataclasses import dataclass, field
 from typing import Tuple, Dict, Any
 
@@ -12,11 +10,9 @@ from src.frame.common.exceptions import BusinessException
 
 
 @dataclass(init=False)
-class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
+class HBTE2JJWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     """
-    海西教育网进入课程
-    1.支持通公需课和专业课的学习
-    2.切换课程方式：支持在课程页面点击“返回”按钮和直接“关闭”课程页面两种
+    河北教师教育网进入继教网
     """
     # 计划ID
     plan_id: str = ""
@@ -46,12 +42,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
         # self.main_window_url = "https://office.teacher.com.cn/views/learningViews/myOffice/index.html"
         # await self.open_in_new_window(self.main_window_url)
-        await self.load_url("https://mingshi8.hbte.com.cn/index.php/Home/Project/index.html")
-        await asyncio.sleep(1)
-        btn_show_project = await self.get_elem_with_wait_by_xpath(20, "//a[contains(@class, 'jinxingProductA')]")
-        await self.js_click(btn_show_project)
-        btn_enter_project = await self.get_elem_with_wait_by_xpath(20, "//a[@id='tiao']")
-        await self.js_click(btn_enter_project)
+        await self._enter_project()
         btn_enter_class = await self.get_elem_with_wait_by_xpath(20, "//div[@class='button-item button-item-hover']")
         await self.js_click(btn_enter_class)
         # 等待页面加载完成
@@ -69,7 +60,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         self.main_window_url = await self.get_current_url()
         if await self._is_passed():
             # 学习通过了，无需学习
-            self.logger.info(f"用户【{self.username_showed}】学习成绩已经合格了，准备退出")
+            self.logger.info(f"学习成绩已经合格了，准备退出")
             # self.do_after_finished_all_courses()
             return False, f"{self.course_type.split('|')[0]}已学完"
         else:
@@ -116,7 +107,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         # 展开课程
         if not await course.is_visible():
             menu_elem = await self.get_relative_elem_by_xpath(course,
-                                                        "./ancestor::div[@class='module_wrap']/preceding-sibling::div/span[contains(@class, 'step')]")
+                                                              "./ancestor::div[@class='module_wrap']/preceding-sibling::div/span[contains(@class, 'step')]")
             if menu_elem:
                 # 点击展开
                 await menu_elem.click()
@@ -147,6 +138,22 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
                 max_retry_count -= 1
                 await self.switch_to_latest_window()
         return True, course_name
+
+    async def _handle_alert(self, dialog):
+        await dialog.accept()
+        await asyncio.sleep(1)
+        await self.load_url("https://mingshi8.hbte.com.cn/index.php/Home/Project/index.html")
+
+    async def _enter_project(self):
+        await self.register_alert_handler(self._handle_alert)
+        if await self.get_current_url() != "https://mingshi8.hbte.com.cn/index.php/Home/Project/index.html":
+            await self.load_url("https://mingshi8.hbte.com.cn/index.php/Home/Project/index.html")
+            await asyncio.sleep(1)
+        btn_show_project = await self.get_elem_with_wait_by_xpath(20,
+                                                                  "(//a[contains(@class, 'jinxingProductA')])[last()]")
+        await self.js_click(btn_show_project)
+        btn_enter_project = await self.get_elem_with_wait_by_xpath(20, "//a[@id='tiao']")
+        await self.js_click(btn_enter_project)
 
     async def handle_prev_output(self, prev_output: Dict[str, Any]):
         project_code = prev_output.get("project_code", "")
@@ -236,7 +243,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def _enter_pub_project(self):
         # 进入公需课
         enter_study_btn = await self.get_elem_with_wait_by_xpath(10,
-                                                           "//a[@class='btn-start' and contains(@onclick, '14071')]")
+                                                                 "//a[@class='btn-start' and contains(@onclick, '14071')]")
         if enter_study_btn:
             await enter_study_btn.click()
         else:
@@ -245,7 +252,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def _enter_pro_project(self):
         # 进入专业课
         enter_study_btn = await self.get_elem_with_wait_by_xpath(10,
-                                                           "//a[@class='btn-start' and not(contains(@onclick, '14071'))]")
+                                                                 "//a[@class='btn-start' and not(contains(@onclick, '14071'))]")
         if enter_study_btn:
             await enter_study_btn.click()
         else:
@@ -253,7 +260,7 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
 
     async def _handle_complete_info_tips(self):
         alert_complete_info = await self.wait_for_visible_by_xpath(3,
-                                                             "//div[@class='layui-layer layui-layer-page'][./*[contains(text(),'补充个人信息')]]")
+                                                                   "//div[@class='layui-layer layui-layer-page'][./*[contains(text(),'补充个人信息')]]")
         if alert_complete_info:
             user_info = await self._get_user_info()
             if not user_info[5].strip():
@@ -375,8 +382,8 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         for chapter_name in self.chapter_name_list:
             # 获取未选课的章节
             first_unchoose_chapter = await self.get_elem_with_wait_by_xpath(5,
-                                                                      f"(//li[.//h2[text()='{chapter_name}']]//a[text()='去选课'])[1]",
-                                                                      False)
+                                                                            f"(//li[.//h2[text()='{chapter_name}']]//a[text()='去选课'])[1]",
+                                                                            False)
             if first_unchoose_chapter:
                 # 处理选课
                 await self._enter_choose_course(chapter_name, first_unchoose_chapter)
@@ -412,7 +419,8 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
 
         await asyncio.sleep(2)
         # 获取选课规则
-        course_course_rule = await self.get_elems_with_wait_by_xpath(10, "//div[@id='selectRule']//span[@class='c_orange']")
+        course_course_rule = await self.get_elems_with_wait_by_xpath(10,
+                                                                     "//div[@id='selectRule']//span[@class='c_orange']")
         if not course_course_rule:
             raise BusinessException("获取选课规则失败")
         total_course_count = int(await course_course_rule[1].text_content())
@@ -463,8 +471,8 @@ class HXJYWEnterCourseTaskNode(BaseEnterCourseTaskNode):
         else:
             self.logger.info(f"用户【{self.username_showed}】{chapter_name}-{unchoose_module_name}，选课成功！")
             first_unchoose_chapter = await self.get_elem_with_wait_by_xpath(10,
-                                                                      f"(//li[.//h2[text()='{chapter_name}']]//a[text()='去选课'])[1]",
-                                                                      visible=False)
+                                                                            f"(//li[.//h2[text()='{chapter_name}']]//a[text()='去选课'])[1]",
+                                                                            visible=False)
             if first_unchoose_chapter:
                 await self._enter_choose_course(chapter_name, first_unchoose_chapter)
             else:

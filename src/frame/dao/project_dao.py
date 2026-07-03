@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS tb_project (
 
         # 拼接多条件（多个条件用AND连接，无则不拼接）
         if where_conditions:
-            sql += " WHERE " + " ".join(where_conditions)
+            sql += " WHERE " + "and ".join(where_conditions)
 
         with self.get_db_connection() as conn:
             row = conn.execute(sql, params).fetchone()
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS tb_project (
             params.append(f"%{name.strip()}%")
 
         if where_conditions:
-            sql += " WHERE " + " ".join(where_conditions)
+            sql += " WHERE " + "and ".join(where_conditions)
         # 拼接分页+排序（按创建时间倒序，最新任务在前，符合业务习惯）
         sql += " ORDER BY create_time DESC LIMIT ? OFFSET ?"
         params.extend([page_size, offset])

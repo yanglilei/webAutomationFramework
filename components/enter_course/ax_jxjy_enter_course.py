@@ -81,6 +81,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
                 return False, "已合格"
             else:
                 return False, "进入培训专题异常"
+        return True, ""
 
     async def enter_course(self) -> Tuple[bool, str]:
         unfinished_course, preclick_flag = await self.get_first_unfinished_course()
@@ -218,9 +219,9 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
         desc = ""
         iframe = self.switch_to_frame("#frame_content")
         # self.web_browser.switch_to.iframe("frame_content")
-        xpath_tmp = "//div[@class='l_tcourse_center h120'][.//dt[contains(text(), '教育培训')]][.//dd[4][contains(text(), '%s')]]/preceding-sibling::div[@class='l_tcourse_right fr clearf']//a"
+        xpath_tmp = "(//div[@class='l_tcourse_center h120'][.//dt[contains(text(), '教育培训')]][.//dd[4][contains(.//text(), '%s') or contains(.//text()[2], '%s')]]/preceding-sibling::div[@class='l_tcourse_right fr clearf']//a)[1]"
 
-        first_subject = await self.get_elem_with_wait_by_xpath(10, xpath_tmp % '未合格', iframe)
+        first_subject = await self.get_elem_with_wait_by_xpath(10, xpath_tmp % '未合格', iframe=iframe)
         if not first_subject:
             if await self.get_elem_by_xpath(xpath_tmp % '已合格'):
                 # 学习已合格了，截图保存
@@ -249,7 +250,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
     async def get_first_unfinished_course(self):  # 返回第一个未完成课程和预点击状态，对每个课程都会做预点击操作，为什么这么做？因为有些课程点击了进不去（平台bug）。
         is_preclick_succ = False
         # self.web_browser.switch_to.iframe("frame_content")
-        iframe = self.switch_to_frame("#frame_content")
+        iframe = self.switch_to_frame("iframe#frame_content")
         # 获取第一个未完成的课程
         # xpath = "//li[@class='l_tcourse_list moocCourse clearf'][.//span[@class='l_sprogress_text mal10' and not(contains(text(), '100%'))]][1]//a"
         xpath = "//li[@class='l_tcourse_list moocCourse clearf'][.//span[@class='l_sprogress_text mal10' and not(contains(text(), '100%'))]]//div[@class='px_form_btn l_sform_btn fr']"
@@ -333,7 +334,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
             await elem.scroll_into_view_if_needed()
             await asyncio.sleep(0.5)
             # time.sleep(0.5)
-        elem.click()
+        await elem.click()
         # 等待新窗口打开
         max_wait_count = 10
         # 最多等待10秒
@@ -370,7 +371,7 @@ class AXJXJYEnterCourseTaskNode(BaseEnterCourseTaskNode):
         iframe = self.switch_to_frame("#frame_content-zj")
         contents = await self.get_elems_with_wait_by_xpath(10,
                                                      "//li[./div[@class='chapter_item']//span[@class='catalog_points_yi' and text()>0]]",
-                                                     iframe)
+                                                     iframe=iframe)
         if contents:
             if not await contents[0].is_visible():
                 await contents[0].scroll_into_view_if_needed()

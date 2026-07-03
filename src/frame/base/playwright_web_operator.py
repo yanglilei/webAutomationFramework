@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Literal, Optional, Callable, Union, Pattern
+from typing import List, Literal, Optional, Callable, Union, Pattern, Awaitable
 
 from playwright.async_api import Page, BrowserContext, Dialog, Locator, FrameLocator
 
@@ -145,15 +145,19 @@ class PlaywrightWebOperator:
         page = self.get_current_page()
         return await page.evaluate("navigator.userAgent")
 
-    async def close_other_windows(self, cur_window_handle):
+    async def close_other_windows(self, cur_window_handle=None):
         """
         关闭其他窗口
         :param cur_window_handle: 当前窗口句柄
         :return:
         """
+        if not cur_window_handle:
+            cur_window_handle = self.get_current_page()
+
         if self._is_window_closed(cur_window_handle):
             # raise ValueError("当前窗口已关闭")
             return
+
         for window_handle in self.get_windows():
             if window_handle != cur_window_handle:
                 await self.close_window(window_handle)
@@ -181,7 +185,7 @@ class PlaywrightWebOperator:
             self._current_page = window_handler
             await window_handler.bring_to_front()
 
-    async def get_windows_by_url_key(self, url_key: str, is_support_fuzzy=True):
+    async def get_windows_by_url_key(self, url_key: str, is_support_fuzzy=True) -> list[Page]:
         """
         根据url_key获取窗口
         :param url_key: url关键字
@@ -245,14 +249,24 @@ class PlaywrightWebOperator:
         page = self.get_current_page()
         await page.go_back()
 
-    async def open_in_new_window(self, url):
+    async def open_in_new_window(self, url, *,
+        timeout: Optional[float] = None,
+        wait_until: Optional[
+            Literal["commit", "domcontentloaded", "load", "networkidle"]
+        ] = None,
+        referer: Optional[str] = None):
         """
         新建Page（窗口）并打开URL
         :param url: url地址
+        :param timeout: 等待时间，单位：秒
+        :param wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"]
+        :param referer: 请求头里的「来源地址」
+        :
         :return:
         """
         new_page = await self.context.new_page()
-        await new_page.goto(url)
+        timeout = int(timeout*1000) if timeout else None
+        await new_page.goto(url, timeout=timeout, wait_until=wait_until, referer=referer)
         self._current_page = new_page
 
     async def quit(self):
@@ -260,15 +274,29 @@ class PlaywrightWebOperator:
         await self.context.close()
         await self.context.browser.close()
 
-    async def load_url(self, url, wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"):
+    async def load_url(self, url,
+                    timeout: Optional[float] = None,
+                    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"):
         """
         加载指定url
         :param url: url
+        :param timeout: 等待时间，单位：秒
         :param wait_until: 等待条件，可选值：commit, domcontentloaded, load, networkidle
         :return:
         """
         page = self.get_current_page()
-        await page.goto(url, wait_until=wait_until)
+        timeout = int(timeout * 1000) if timeout else None
+        await page.goto(url, timeout=timeout, wait_until=wait_until)
+
+    async def wait_for_load_state(self, timeout: float, state: Literal["domcontentloaded", "load", "networkidle"] = "load"):
+        """
+        等待页面加载完成
+        :param timeout: 等待时间，单位：秒
+        :param state: 默认load，可选值："domcontentloaded", "load", "networkidle"
+        :return:
+        """
+        page = self.get_current_page()
+        await page.wait_for_load_state(state=state, timeout=int(timeout*1000))
 
     async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator] = None):
         """
@@ -344,12 +372,25 @@ class PlaywrightWebOperator:
             locator = self.get_current_page()
         await locator.evaluate(""" (css_expr) => {
             let video = document.querySelector(css_expr);
-            if (video != null && !video.muted) {
-                video.muted = true;
-            }
-            if (video != null && video.paused) {
-                video.play();
+            if (video != null) {
+                if (!video.muted || video.volume != 0) {
+                    video.muted = true;
+                    video.volume = 0;
+                }
+                if (video.paused) {
+                    video.play();
+                }
             }}
+            """, video_css)
+
+    async def is_video_ended(self, video_css: str, locator: Locator = None):
+        if not locator:
+            locator = self.get_current_page()
+
+        return await locator.evaluate(""" (css_expr) => {
+            let v = document.querySelector(css_expr);
+            return v ? v.ended : null;
+            }
             """, video_css)
 
     async def get_elem_with_wait(self, wait_time: float, selector, visible=True,
@@ -492,6 +533,14 @@ class PlaywrightWebOperator:
         except Exception:
             return None
 
+    async def get_relative_elem_with_wait(self, timeout, elem: Locator, locator: str, visible=True) -> Optional[Locator]:
+        try:
+            ret = elem.locator(locator)
+            await ret.first.wait_for(timeout=timeout * 1000, state="visible" if visible else "attached")
+            return None if await ret.count() == 0 else ret.first
+        except Exception:
+            return None
+
     async def get_relative_elem_by_xpath(self, elem: Locator, xpath: str) -> Optional[Locator]:
         """
         获取一个相对 elem 的元素
@@ -502,6 +551,19 @@ class PlaywrightWebOperator:
         :return:
         """
         return await self.get_relative_elem(elem, f"xpath={xpath}")
+
+    async def get_relative_elem_with_wait_by_xpath(self, timeout: float, elem: Locator, xpath: str, visible=True) -> Optional[Locator]:
+        """
+        获取一个相对 elem 的元素
+        - 没有元素返回False
+        - 存在元素返回元素本身
+        :param timeout: 超时时间，单位秒
+        :param elem: 元素
+        :param xpath: xpath表达式
+        :param visible: True-等待可见，False-等待存在
+        :return:
+        """
+        return await self.get_relative_elem_with_wait(timeout, elem, f"xpath={xpath}", visible)
 
     async def get_relative_elem_by_css(self, elem: Locator, css: str) -> Optional[Locator]:
         """
@@ -633,7 +695,7 @@ class PlaywrightWebOperator:
         """
         await self.wait_for_disappeared(wait_time, css, iframe)
 
-    async def register_alert_handler(self, handler: Callable[[Dialog], None]):
+    async def register_alert_handler(self, handler: Callable[..., Union[Awaitable[None], None]]):
         """
         注册弹窗监听方法
         最好提前用该方法获取监听
@@ -650,7 +712,7 @@ class PlaywrightWebOperator:
         :return:
         """
         try:
-            return await self.get_current_page().wait_for_event("dialog", timeout=0.0)
+            return await self.get_current_page().wait_for_event("dialog", timeout=1.0)
         except:
             return False
 

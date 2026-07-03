@@ -46,12 +46,17 @@ class YanxiuScreenShot(BaseEnterCourseTaskNode):
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
         # 更新请求头
         self.headers.update(prev_output.get("headers", {}))
-        # 获取第一个未完成的专题
-        btn_enter_course = await self.get_elem_with_wait_by_xpath(10, "//div[@class='btn-group']//button")
-        if not btn_enter_course:
-            return False, "没找到课程！"
+        # 获取第一个未完成的项目
+        project_name = self.node_config.get("node_params", {}).get("project_name", "")
+        if not project_name:
+            return False, "请配置项目名称！"
+        xpath = f"//div[@class='home-project-pane'][.//div[@class='project-name' and text()='{project_name}']]//div[@class='btn-group']//button"
+
+        btn_enter_project = await self.get_elem_with_wait_by_xpath(10, xpath)
+        if not btn_enter_project:
+            return False, "没找到项目！"
         # 进入课程
-        await btn_enter_course.click()
+        await btn_enter_project.click()
         await self.wait_for_url_changed(re.compile(r"workspace/\d+/"))
         # 解析url，获取url参数
         self._parse_url(await self.get_current_url())

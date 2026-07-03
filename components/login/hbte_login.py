@@ -59,7 +59,7 @@ class HBTELoginTaskNode(BaseLoginTaskNode):
                 await asyncio.sleep(1)
                 ret = False, "点击登录异常"
             else:
-                self.wait_for_url_changed(lambda url: "Home/Index/index.html" in url, 3)
+                await self.wait_for_url_changed(lambda url: "Home/Index/index.html" in url, 3)
 
                 error_tips_elem = await self.get_elem_by_xpath("//div[@class='system-message']//p[@class='error']")
                 if error_tips_elem:

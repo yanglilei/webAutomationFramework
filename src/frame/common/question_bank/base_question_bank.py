@@ -11,12 +11,23 @@ class BaseQuestionBankHandler(ABC):
         self.question_bank = {}
         # 题库的key，通常为题库名称，保证全局唯一
         self.question_bank_key = question_bank_key
-        # 题库内容（未格式化）
+        # 题库内容。格式：[题库类型];[题库文件or答案]，例如："1;题库文件名"。
+        # 目前仅支持3中类型的题库。1-固定答案（见FixedQuestionBankHandler），2-全匹配题库（见FullQuestionBankHandler），3-半匹配匹配题库（见SimpleQuestionBankHandler）
         self.question_bank_value = question_bank_value
         # 加载题库
         self._load_question_bank()
 
     def _load_question_bank(self):
+        if self.question_bank_value:
+            segs = self.question_bank_value.split(";")
+            if len(segs) != 2:
+                raise ValueError("题库配置项格式错误")
+
+            qb_type = segs[0]
+            if qb_type not in ("1", "2", "3"):
+                raise ValueError("题库类型错误")
+
+            self.question_bank_value = segs[1].strip()
         self.question_bank[self.question_bank_key] = self.analyze_question_bank(self.question_bank_value)
 
     def get_answer(self, question_no="", question_desc="", options=[]) -> Tuple[str, ...]:
@@ -93,4 +104,3 @@ class BaseQuestionBankHandler(ABC):
                 else:
                     cha_list.append(ch)
         return "".join(cha_list)
-

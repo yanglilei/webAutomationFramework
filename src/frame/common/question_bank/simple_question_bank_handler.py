@@ -12,6 +12,7 @@ from src.utils.sys_path_utils import SysPathUtils
 class SimpleQuestionBankHandler(BaseQuestionBankHandler):
     """
     最简单的题库，需匹配题目，答案固定。
+    类型=3
     示例题库配置如下：
     ------
     xkb_question_bank_high_ts = 19167_question_bank.txt
@@ -52,6 +53,8 @@ class SimpleQuestionBankHandler(BaseQuestionBankHandler):
 
     def get_answer_from_question_bank(self, question_bank_value: List[str], question_desc: str,
                                       options: List[str] = [], question_no="") -> Tuple[str, ...]:
+        if question_desc:
+            question_desc = "".join(question_desc.split())  # 去除所有空白（空格、制表符 \t、换行 \n）
         answers = self.match_answer_from_question_bank(question_desc, question_bank_value)
         return self.answer_str_2_tuple(answers)
 
@@ -60,7 +63,7 @@ class SimpleQuestionBankHandler(BaseQuestionBankHandler):
         answer = None
         for subject in subject_list:
             # 先匹配问题，匹配值大于84说明匹配到题目了
-            val = fuzz.partial_ratio(question_desc, subject)
+            val = fuzz.partial_ratio(question_desc, subject.split("###")[0])
             if val >= 80:
                 # 匹配到问题了
                 pattern = ".*###(.*)###"

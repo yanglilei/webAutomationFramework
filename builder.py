@@ -337,7 +337,7 @@ def build_xgs():
     :return:
     """
     # 打包时要替换的参数（可根据需要修改）
-    XGSBuilder.TARGET_VERSION = "1.0.8"  # 替换后的版本号
+    XGSBuilder.TARGET_VERSION = "1.1.15"  # 替换后的版本号
     XGSBuilder.TARGET_IS_ACTIVATION = False  # 替换后的激活状态
     XGSBuilder.do_build()  # 打包
 

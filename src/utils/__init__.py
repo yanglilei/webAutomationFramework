@@ -16,4 +16,5 @@ from .batch_no_utils import generate_batch_number, generate_batch_number_distrib
 from .basic import mask_username, is_id_no, is_phone_no
 from .async_utils import get_event_loop_safely
 from .smtedu_sign_utils import SMTEduSignUtils, RequestMethod
+from .doc_utils import DocReader
 # from .cython_builder import CythonBuilder

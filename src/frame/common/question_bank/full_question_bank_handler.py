@@ -12,6 +12,7 @@ from src.utils.sys_path_utils import SysPathUtils
 class FullQuestionBankHandler(BaseQuestionBankHandler):
     """
     完整题库。需匹配题目和选项
+    类型=2
     示例题库配置如下：
     ------
     xkb_question_bank_high_ts = 高中通识题库.txt
@@ -106,11 +107,17 @@ class FullQuestionBankHandler(BaseQuestionBankHandler):
                     logging.error("解析题库失败", exc_info=True)
         return subjects
 
+
+
+
     def get_answer_from_question_bank(self, question_bank_value: List[Any], question_desc: str,
                                       options: List[str] = [], question_no="") -> Tuple[str, ...]:
         ret = None
         if question_desc:
             question_desc = self.strip(question_desc)
+            if options:
+                options = [self.strip(option) for option in options]
+
             val_map: Dict = {"val": 0, "answer": ""}
             for subject in question_bank_value:
                 # 先匹配问题，匹配值大于80说明匹配到题目了
