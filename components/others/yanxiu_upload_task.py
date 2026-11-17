@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
-from typing import Tuple, List
+from typing import Tuple
 
 from playwright.async_api import Page
 
@@ -13,12 +13,25 @@ from src.utils.doc_utils import DocReader
 
 @dataclass(init=False)
 class YanxiuUploadTask(BasePYNode):
+    """
+    上传作业
+    配置参数：
+    area：区域名称，用于区分文件夹名称
+    project_name：项目名称
+    """
     course_page_window_handle: Page = None
-
-    summary_article_dir = Path(f"C:\\Users\\lovel\\Desktop\\荔城培训总结")
-    teaching_plan_article_dir = Path(f"C:\\Users\\lovel\\Desktop\\荔城教学计划+幼儿园评价优化方案")
+    area: str = ""
+    summary_article_dir = "C:\\Users\\lovel\\Desktop\\%s培训总结"
+    teaching_plan_article_dir = "C:\\Users\\lovel\\Desktop\\%s教学计划+幼儿园评价优化方案"
 
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
+        self.area = self.node_config.get("node_params", {}).get("area")
+        if not self.area:
+            return False, "请配置地区！"
+
+        self.summary_article_dir = Path(self.summary_article_dir % self.area)
+        self.teaching_plan_article_dir = Path(self.teaching_plan_article_dir % self.area)
+
         # 获取第一个未完成的项目
         project_name = self.node_config.get("node_params", {}).get("project_name", "")
         if not project_name:

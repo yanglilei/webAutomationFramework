@@ -18,16 +18,22 @@ class PEPMonitorCourse(BaseMonitorCourseTaskNode):
             # 获取播放声音
             if btn_no_muted:= await self.get_elem_by_xpath("//button[text()='播放声音']"):
                 if btn_no_muted and await btn_no_muted.is_visible() and await btn_no_muted.is_enabled():
-                    await self.js_click(btn_no_muted)
+                    try:
+                        await self.js_click(btn_no_muted)
+                    except:
+                        self.logger.error("点击‘播放声音’按钮失败！")
 
             course_name_elem = await self.get_elem_by_xpath("//div[@class='gs-live-in-fo']")
             course_name = await course_name_elem.text_content() if course_name_elem else ""
-            times = await self.execute_js("""() => {let played_time = document.querySelector('.time_one1').textContent;
-                        let total_time = document.querySelector('.time_one2').textContent;
-                        return [played_time, total_time];}
-                        """)
-            played_time = self.format_video_time(times[0])
-            total_time = self.format_video_time(times[1])
+            played_str, total_str = await self.execute_js("""
+            () => {
+                const playedEl = document.querySelector('.time_one1');
+                const totalEl = document.querySelector('.time_one2');
+                return [playedEl?.textContent || '', totalEl?.textContent || ''];
+            }
+            """)
+            played_time = self.format_video_time(played_str) if played_str else played_str
+            total_time = self.format_video_time(total_str) if total_str else total_str
             self.logger.info(f"【{course_name}】{played_time}/{total_time}")
             # 出现视频结束的按钮
             btn_play_stop = await self.get_elem_by_xpath("//button[@class='stop-reporting-btn']")

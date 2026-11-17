@@ -1,6 +1,6 @@
 import asyncio
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Tuple
 
@@ -16,11 +16,34 @@ from src.utils.sys_path_utils import SysPathUtils
 @dataclass(init=False)
 class SMTEDULogin(BaseLoginTaskNode):
     """
-    智慧平台登录
-    https://auth.smartedu.cn/uias/login
+    智慧平台登录（https://auth.smartedu.cn/uias/login）
+    自动获取authorization和sdp-app-id
+    可配置参数：
+    is_update_user_info（是否更新用户信息）：true-获取用户信息更新到表格中；false-不更新到表格中
+    版本：V0.0.1
     """
     slider_img_path: str = ""
     background_img_path: str = ""
+    user_info: dict = field(default_factory=dict)
+
+    # 异步监听请求
+    async def handle_request(self, request):
+        if "v1.1/person_accounts" in request.url:
+            authorization = request.headers.get("authorization")
+            headers = {"authorization": authorization}
+            self.set_output_data("headers", headers)
+
+    async def handle_response(self, response):
+        request = response.request
+        if request.url.startswith(
+                "https://uc-gateway.ykt.eduyun.cn/v1.1/users/") and "with_ext=true&session_id=" in request.url:
+            headers = {"authorization": request.headers.get("authorization"),
+                       "sdp-app-id": request.headers.get("sdp-app-id")}
+            self.set_output_data("headers", headers)
+            response_json = await response.json()
+            self.user_info = {"id": str(response_json.get("account_id")), "real_name": response_json.get("real_name"),
+                              "school": response_json.get("ext_by_standard", {}).get("x_school_name", "")}
+            self.set_output_data("user_info", self.user_info)
 
     def set_up(self):
         slider_img_dir = self._create_slider_verify_img_dir()
@@ -28,15 +51,12 @@ class SMTEDULogin(BaseLoginTaskNode):
         self.background_img_path: str = str(slider_img_dir.joinpath(self.username + "_1.png"))
 
     async def do_login(self) -> Tuple[bool, str]:
+        # self.get_current_page().on("request", self.handle_request)
+        self.get_current_page().on("response", self.handle_response)
         ret = await self._start_login()
-        # 2. 新增：捕获并筛选网络请求（核心差异）
-        # for request in self.web_browser.requests:  # 遍历所有捕获的请求
-        #     print("=" * 50)
-        #     print("请求URL：", request.url)  # 打印请求地址
-        #     print("请求方法：", request.method)  # GET/POST
-        #     print("响应状态码：", request.response.status_code)  # 200/404等
-        #     # print("响应内容：", request.response.body.decode('utf-8'))  # 接口返回的JSON数据
-        #     break
+        is_get_user_info = self.node_config.get("node_params", {}).get("is_update_user_info", False)
+        if is_get_user_info:
+            self.user_manager.update_record_by_username(self.username, {2: self.user_info.get("real_name"), 3: self.user_info.get("school")})
         return ret
 
     async def _start_login(self):

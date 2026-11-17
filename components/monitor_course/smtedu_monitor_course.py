@@ -1,6 +1,7 @@
 import asyncio
 import decimal
 import random
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,12 +24,45 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
     train_id: str = ""
     # 用户ID
     user_id: str = ""
+    # 当前目录名称
+    content_name: str = ""
     # 当前专题的要求学时
     phase_period_hour_limit: decimal.Decimal = decimal.Decimal(0)
     # 学时修正偏差值
     time_fix_deviation: decimal.Decimal = decimal.Decimal("0.3")
 
+    #### 视频卡住，页面需要刷新用到的变量 ####
+    # 线程启动的时间。用于判断学习过程中是否卡住了。实际时间有更新，但是学习时间没有更新，则认为当前学习卡住了。需要刷新页面或者重启学习线程。
+    first_sys_time: int = 0
+    cur_sys_time: int = 0
+    # 第一次计算时间的标志
+    first_cal_time_flag: bool = True
+    pre_learned_time: int = 0
+    cur_learned_time: int = 0
+    #### 视频卡住，页面需要刷新用到的变量 ####
+
+    #### 获取时间失败，需要刷新用到的变量 ####
+    # 需要刷新状态标志
+    is_get_time_fail: bool = False
+    pre_poll_count: int = 0
+    # 发现获取时间失败，最大轮询多少遍之后刷新页面，轮询一次耗时3秒
+    max_poll_count = 10
+    #### 获取时间失败，需要刷新用到的变量 ####
+
+    # 当前url地址
+    current_page_url: str = ""
+
+    def init_params(self):
+        self.first_sys_time = 0
+        self.cur_sys_time = 0
+        # 第一次计算时间的标志
+        self.first_cal_time_flag = True
+        self.pre_learned_time = 0
+        self.cur_learned_time = 0
+        self.is_get_time_fail = False
+
     async def prepare_before_poll_monitor_course(self):
+        self.init_params()
         self.video_page_window_handler = self.get_prev_output().get("video_page")
         self.course_page_window_handler = self.get_prev_output().get("course_page")
         self.course_info = self.get_prev_output().get("course_info")
@@ -38,6 +72,7 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
         self.user_id = self.get_prev_output().get("user_id", "")
         await self.switch_to_window(self.video_page_window_handler)
         await self._trigger_first_content()
+        self.current_page_url = await self.get_current_url()
 
     async def single_poll_monitor(self):
 
@@ -49,9 +84,60 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
 
         await self.handle_exercise()
         await self.handle_pause()
-
+        # played_time, total_time = await self.get_video_after_playing(self.get_current_page(), "video.vjs-tech")
         played_time, total_time = await self._get_played_time_and_total_time()
-        self.logger.info("【%s】总时长%s，已学习%s", self.content_name, total_time, played_time)
+        self.logger.info(f"【{self.content_name}】进度：{played_time}/{total_time}")
+        if not played_time or not total_time or played_time == "00:00:00":
+            if not self.is_get_time_fail:
+                self.is_get_time_fail = True
+                self.pre_poll_count = self.poll_count
+            else:
+                if self.poll_count > self.pre_poll_count + self.max_poll_count:
+                    self.logger.info(f"页面卡住了{self.max_poll_count}轮，执行刷新操作！")
+                    await self.refresh()
+                    self.is_get_time_fail = False
+                    self.pre_poll_count = 0
+            return
+
+        hour, minute, second = played_time.split(":")
+        if self.poll_count > 5:  # self.poll_count > 5的作用是延迟计算时间，防止视频时间加载延迟导致播放的时间获取到为00:00:00
+            if self.first_cal_time_flag:
+                self.first_sys_time = int(time.time())
+                self.pre_learned_time = int(hour) * 3600 + int(minute) * 60 + int(second)
+                self.first_cal_time_flag = False
+            else:
+                self.cur_sys_time = int(time.time())
+                # 计算时间过去了多久，单位秒
+                sys_time_span = self.cur_sys_time - self.first_sys_time
+                self.cur_learned_time = int(hour) * 3600 + int(minute) * 60 + int(second)
+                learned_time_span = self.cur_learned_time - self.pre_learned_time
+
+                if sys_time_span - learned_time_span > 60:
+                    # 1分钟了，学习时间没有更新了，则重启该页面
+                    self.logger.info("【%s】卡住1分钟了，刷新页面..." % self.content_name)
+                    # 退出当前的监听轮训，外部会重启
+                    await self._handle_stuck()
+                    self.init_params()
+                    # self.terminate("学习时间没有更新！")
+                    return
+
+    async def _handle_stuck(self):
+        # 处理乱跳转，网站有个bug：会突然跳转到其他页面上
+        if "teacherTraining/courseDetail" not in await self.get_current_url():
+            await self.load_url(self.current_page_url)
+        else:
+            await self.refresh()
+
+    def format_show_time(self, time: str):
+        # 格式化时间为：HH:MM:SS
+        ret = time
+        if len(time) < 5:
+            ret = "00:" + time.rjust(5, "0")
+        elif len(time) < 6:
+            ret = "00:" + time
+        elif len(time) < 8:
+            ret = time.rjust(8, "0")
+        return ret
 
     async def handle_exercise(self):
         exercise_window = await self.get_elem_by_xpath("//div[@class='index-module_box_blt8G']")
@@ -77,9 +163,20 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
                                                                                      "//div[@class='index-module_box_blt8G']")
 
     async def handle_pause(self):
-        btn_i_known = await self.get_elem_by_xpath("//div[@class='fish-modal-content']//button[.//text()='我知道了']")
+        xpath = "//div[@class='fish-modal-content']//button[.//text()='我知道了']"
+        btn_i_known = await self.get_elem_by_xpath(xpath)
         if btn_i_known:
             await self.js_click(btn_i_known)
+            await self.wait_for_disappeared_by_xpath(5, xpath)
+            self.logger.warning("处理暂停成功！")
+
+        xpath = "//div[@class='fish-modal-content'][.//div[@class='fish-modal-confirm-content' and contains(text(), '倍速播放')]]//button"
+        btn_i_known = await self.get_elem_by_xpath(xpath)
+        if btn_i_known:
+            await self.js_click(btn_i_known)
+            await self.wait_for_disappeared_by_xpath(5, xpath)
+            self.logger.warning("处理倍速播放成功！")
+
         await self.play_video("video.vjs-tech")
         # pause_btn = await self.is_elem_visible("//button[contains(@class,'vjs-paused')]")
         # if pause_btn:
@@ -94,7 +191,7 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
         xpath = "//div[contains(@class,'resource-item resource-item-train resource-item-active')]//i"
         current_content_finished_flag = await self.get_elem_by_xpath(xpath)
         if is_video_ended or (current_content_finished_flag and (
-        await current_content_finished_flag.get_attribute("title")) == "已学完"):
+                await current_content_finished_flag.get_attribute("title")) == "已学完"):
             ret = True
         return ret
 
@@ -121,19 +218,82 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
             # 没有找到已经播放完的时间
             self.logger.error("【%s】没有获取到时间，页面出现异常！" % self.content_name)
         else:
-            ret = played_time.rjust(5, "0"), total_time.rjust(5, "0")
+            ret = self.format_show_time(played_time), self.format_show_time(total_time)
         return ret
+
+    async def get_video_after_playing(self, page, video_selector: str = "video", timeout_ms: int = 8000):
+        # 等待video DOM出现
+        await page.wait_for_selector(video_selector, timeout=timeout_ms)
+
+        # 固定JS字符串，选择器通过入参传入，杜绝f-string{}冲突
+        wait_js = """
+            (params) => {
+            const sel = params[0];
+            const timeout = params[1];
+            return new Promise((resolve, reject) => {
+                const video = document.querySelector(sel);
+                if (!video) {
+                    reject("找不到video标签");
+                    return;
+                }
+                // 已经正常播放直接放行
+                if (video.readyState >= 3 && !video.paused) {
+                    resolve();
+                    return;
+                }
+                function playingHandler() {
+                    video.removeEventListener("playing", playingHandler);
+                    resolve();
+                }
+                video.addEventListener("playing", playingHandler);
+                // 超时兜底
+                setTimeout(() => {
+                    video.removeEventListener("playing", playingHandler);
+                    resolve();
+                }, timeout);
+            })
+        }
+        """
+        # 把选择器、超时数字当成参数传给JS，不拼接字符串
+        await page.evaluate(wait_js, [video_selector, timeout_ms])
+
+        # 获取时长，同样参数传递，不用f-string
+        get_time_js = """
+        (sel) => {
+            const v = document.querySelector(sel);
+            return {
+                duration: v.duration,
+                currentTime: v.currentTime
+            }
+        }
+        """
+        time_data = await page.evaluate(get_time_js, video_selector)
+
+        def sec_to_hms(seconds: float):
+            if seconds is None or seconds <= 0:
+                return "00:00:00"
+            s = int(seconds)
+            h = s // 3600
+            m = (s % 3600) // 60
+            sec = s % 60
+            return f"{h:02d}:{m:02d}:{sec:02d}"
+
+        return sec_to_hms(time_data.get("currentTime")), sec_to_hms(time_data.get("duration"))
 
     async def _switch_to_next_content(self):
         # 刷新窗口，让右侧目录栏更新
         # self.web_browser.refresh()
         await asyncio.sleep(2)
+        # 此处要刷新下前一个页面！
+        await self.switch_to_window(self.course_page_window_handler)
+        await self.refresh()
+        await self.switch_to_window(self.video_page_window_handler)
         # 由于不需要把课程中所有的目录都读完，所以读完第一个目录后，需要刷新课程页面，用于判断当前课程是否完成
         finished_info: dict = await self._get_finished_info()
         # 没有认定的课程，则直接读完所有课程
         if decimal.Decimal(finished_info.get(self.course_info["phase_id"], "0.0")) >= decimal.Decimal(
                 self.phase_period_hour_limit) + self.time_fix_deviation:  # 多加0.5学时避免学时不够！
-            # 判定当前专题是否已经完成了
+            # 判定当前阶段是否已经完成了
             self.terminate("已完成")
             return
 
@@ -142,6 +302,8 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
                     self.course_info["max_period"]) + self.time_fix_deviation:
                 # 还未达到学时要求，需要读下一个目录
                 await self._trigger_first_content()
+                # 切换目录后需要重置参数，保证卡住重启机制依然有效
+                self.init_params()
             else:
                 self.terminate("已完成")
         else:  # 针对没有认定的课程
@@ -150,6 +312,8 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
                 # 判定当前课程是否已经完成了
                 # 还未达到学时要求，需要读下一个目录
                 await self._trigger_first_content()
+                # 切换目录后需要重置参数，保证卡住重启机制依然有效
+                self.init_params()
             else:
                 self.terminate("已完成")
 
@@ -204,7 +368,7 @@ class SMTEDUMonitorCourse(BaseMonitorCourseTaskNode):
             if not first_content:
                 await self.screenshot(Path(SysPathUtils.get_tmp_file_dir(), self.username + "-error" + str(
                     random.randint(0, 100000)) + ".png"))
-                self.logger.error("未找到可读的目录")
+                self.logger.error(f"【{self.content_name}】未找到可读的目录")
                 raise BusinessException("未找到可读的目录")
         # if not await first_content.is_visible():
         #     lecture_title = await self.get_relative_elem_by_xpath(first_content,

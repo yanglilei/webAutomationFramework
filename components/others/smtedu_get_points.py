@@ -12,6 +12,10 @@ from src.utils.utils import calculate_request_times, random_int_exclude_values
 
 @dataclass(init=False)
 class SMTEDUGetPoints(BasePYNode):
+    """
+    智慧平台获取用户积分。小苗对话、分享、点赞、收藏等获取积分
+    版本：V0.0.1
+    """
     # 获取收藏的课程的url模板
     favor_course_url_tmpl = "https://e-favorite-api.ykt.eduyun.cn/v1/user_favors?$count=true&$offset=%d&$limit=%d&_userId=%s&client_id=all"
     # 获取所有教材

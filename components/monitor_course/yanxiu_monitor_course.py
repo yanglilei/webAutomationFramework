@@ -1,5 +1,4 @@
 import asyncio
-import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -129,27 +128,91 @@ class YanxiuMonitorCourse(BaseMonitorCourseTaskNode):
         #         await self.js_click(btn_next_content)
 
     async def handle_do_exam(self):
-        question_alert_xpath = "//div[@class='answerCard-wrapper']//div[@class='question']"
-        if await self.get_elem_by_xpath(question_alert_xpath):  # 弹窗
-            self.logger.info("开始做课程中的习题！")
-            labels = await self.get_elems_by_xpath(
-                "//div[@class='answerCard-wrapper']//div[@class='question']//label//input")
-            if labels:
-                # 选择选项
-                await labels[0].click()
-                btn_commit = await self.get_elem_by_xpath(
-                    "//div[@class='answerCard-wrapper']//div[@class='question']//button[.//text()='提交']")
+        question_window_xpath = "//div[@class='answerCard-wrapper']//div[@class='question current']"
+        question_window = await self.get_elem_by_xpath(question_window_xpath)
+        if question_window:  # 弹窗
+            el_finish_condition = await self.get_elem_with_wait_by_xpath(3,
+                                                                         "//div[@class='answerCard-wrapper']//div[@class='question current']//h4[@class='subTitle']")
+            if el_finish_condition:
+                await self._get_answer_from_remote(question_window_xpath)
+            else:
+                await self._random_choose(question_window)
+
+    async def _random_choose(self, question_window):
+        self.logger.info("开始做课程中的习题！")
+        labels = await self.get_elems_by_xpath(
+            "//div[@class='answerCard-wrapper']//div[@class='question']//label//input")
+        if labels:
+            # 选择选项
+            await labels[0].click()
+            btn_commit = await self.get_elem_by_xpath(
+                "//div[@class='answerCard-wrapper']//div[@class='question']//button[.//text()='提交']")
+            if btn_commit:
+                await btn_commit.click()
+                self.logger.info("提交了习题！")
+
+            await self.wait_for_disappeared(3, question_window)
+            if await self.is_elem_visible(question_window):
+                # if await self.get_elem_by_xpath(question_alert_xpath):
+                # 选项错误！
+                btn_continue = await self.get_elem_by_xpath(
+                    "//div[@class='answerCard-wrapper']//div[@class='question']//button[.//text()='继续看课']")
+                if btn_continue:
+                    await btn_continue.click()
+
+    async def _get_answer_from_remote(self, question_alert_xpath):
+        self.logger.info("开始做课程中的习题！")
+        el_total_question_count = await self.get_elem_with_wait_by_xpath(2,
+                                                                         "//div[@class='question current']//span[@class='total']")
+        total_question_count = int((await el_total_question_count.text_content()).strip())
+        el_idx = await self.get_elem_with_wait_by_xpath(2, "//div[@class='question current']//span[@class='index']")
+        question_idx = int((await el_idx.text_content()).strip())
+
+        for idx in range(question_idx, total_question_count+1):
+            el_question = await self.get_elem_with_wait_by_xpath(3,
+                                                                      "//div[@class='question current']//div[@class='question-stem']")
+            html = await el_question.inner_html()
+            # prompt = f"回答以下问题，要求：返回答案的选项的顺序（起始为 0）多个答案用英文逗号分隔，例如：0,1,2。\n=====\n{html}"
+            # 请求答题大模型
+            answers_str = await self._request_answer(html)
+
+            xpath = "(//div[@class='question current']//div[@class='question-options']//label)[%d]"
+            for answer in answers_str.split(","):
+                el_answer = await self.get_elem_with_wait_by_xpath(2, xpath % (int(answer) + 1,))
+                await el_answer.click()
+                await asyncio.sleep(0.5)
+
+            btn_commit = await self.get_elem_by_xpath(
+                "//div[@class='question current']//div[@class='actions']//button")
+            if btn_commit:
+                await btn_commit.click()
+                self.logger.info(f"第{idx}题，提交了答案！")
+            if await self.get_elem_with_wait_by_xpath(3, "//div[@class='question current']//div[@class='error']"):
+                btn_commit = await self.get_elem_with_wait_by_xpath(3,
+                    "//div[@class='question current']//div[@class='actions']//button")
                 if btn_commit:
                     await btn_commit.click()
-                    self.logger.info("提交了习题！")
+                    self.logger.info(f"第{idx}题，答案错误，切换到下一题！")
 
-                await self.wait_for_disappeared(3, question_alert_xpath)
-                if await self.get_elem_by_xpath(question_alert_xpath):
-                    # 选项错误！
-                    btn_continue = await self.get_elem_by_xpath(
-                        "//div[@class='answerCard-wrapper']//div[@class='question']//button[.//text()='继续看课']")
-                    if btn_continue:
-                        await btn_continue.click()
+            # await self.wait_for_disappeared(4, el_question)
+            if idx == total_question_count:
+                btn_iknown = await self.get_elem_with_wait_by_xpath(3, "//div[@id='result']//button")
+                if btn_iknown:
+                    await btn_iknown.click()
+            await asyncio.sleep(3)
+
+    async def _request_answer(self, question_html, wrong_answer=""):
+        url = "https://j7p33zdfmw.coze.site/run"
+        headers = {
+            "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImY3NTBlMmYxLWQyN2MtNGIxMC05NzRjLWM2NDczYWJlYzk3ZiJ9.eyJpc3MiOiJodHRwczovL2FwaS5jb3plLmNuIiwiYXVkIjpbIlVXTzM2VFI5c2NWVno1aVI3a0xTSlN3QldNYkdEQnI2Il0sImV4cCI6ODIxMDI2Njg3Njc5OSwiaWF0IjoxNzg3MzIxMzc3LCJzdWIiOiJzcGlmZmU6Ly9hcGkuY296ZS5jbi93b3JrbG9hZF9pZGVudGl0eS9pZDo3Njc2NDg1MjUyMzUyNTczNTAzIiwic3JjIjoiaW5ib3VuZF9hdXRoX2FjY2Vzc190b2tlbl9pZDo3Njc2NDg2ODYyODM5NDgwMzYwIn0.XC4GVCdSgMiHNIPTeJUTvnIDOYYDdFxCMhUFNKZ1MhBm33crOIT8QW-17v13ZOxPRM-ZNVmaU3Lc4dKTgN_IrMPepsFIwPYm7BIr6AlKdWqW-MhhpkrFGeW3CW_OHUpRW2di3-QIT1qrV29GHfTVk0UKtUv4eyJdn-_AhkZy9Je0b5F8b6n8XoB3Xw8qyVk8nTLjq6O5yWkkHUATtq8yJbAWDR8mNuxib6YLcdtxzagGHaL0rbnLdPJXqDXB_6lTSiPtl1qFcOWFNAn6JNb9S-1Bmh_Ug6Of7IEzy8Gf9xQuUpRDtLcrlBKwZkS8n94CyfdBowK73Wu6o7lK0reEkg",
+            "Content-Type": "application/json",
+        }
+        response = await self.context.request.post(url, headers=headers, data={
+            "question_html": f"{question_html}",
+            "wrong_answer": wrong_answer
+        })
+        resp_json = await response.json()
+        return resp_json.get("correct_answer")
 
     async def _send_stars(self):
         # 送星星（评分）

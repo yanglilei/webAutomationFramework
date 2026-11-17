@@ -82,9 +82,9 @@ class HXJYWLoginTaskNode(BaseLoginTaskNode):
         self.project_code = self.node_config.get("node_params", {}).get("project_code")
         if not self.project_code:
             return False, "项目编号未配置"
-
-        project_code_input = await self.get_elem_with_wait_by_xpath(10, project_code_xpath)
+        project_code_input = await self.get_elem_with_wait_by_xpath(4, project_code_xpath)
         if project_code_input:
+
             await project_code_input.fill(self.project_code)
 
         while retry_count > 0:

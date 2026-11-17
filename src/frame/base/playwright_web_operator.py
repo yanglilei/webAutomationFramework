@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Literal, Optional, Callable, Union, Pattern, Awaitable
@@ -28,8 +29,8 @@ class PlaywrightWebOperator:
         #     raise RuntimeError("无可用的页面/窗口")
         return self._current_page
 
-    async def wait_for_url_changed(self, url: Union[str, Pattern[str], Callable[[str], bool]], timeout: float=10.0):
-        await self.get_current_page().wait_for_url(url=url, timeout=timeout*1000)
+    async def wait_for_url_changed(self, url: Union[str, Pattern[str], Callable[[str], bool]], timeout: float = 10.0):
+        await self.get_current_page().wait_for_url(url=url, timeout=timeout * 1000)
 
     # async def _convert_by_to_selector(self, by: str, selector: str) -> str:
     #     """将Selenium的By类型转换为Playwright的selector格式"""
@@ -165,25 +166,68 @@ class PlaywrightWebOperator:
         self._current_page = cur_window_handle
         await cur_window_handle.bring_to_front()
 
-    async def switch_to_window_by_url_key(self, value):
+    async def switch_to_window_by_url_key(
+            self,
+            value: Union[str, Pattern[str], Callable[[str], bool]],
+            wait_timeout: int = 10,
+            poll_interval: float = 0.5
+    ):
         """
-        根据url_key获取窗口
-        :param value: url_key
-        :return:
+        根据规则匹配URL并切换页面，支持字符串包含、正则表达式、自定义判断函数，自带超时轮询等待
+        :param value: 匹配规则
+            1. str: URL包含该字符串即匹配
+            2. Pattern[str]: 正则完全匹配URL
+            3. Callable[[str], bool]: 入参为完整url字符串，返回True则命中窗口
+        :param wait_timeout: 整体最大等待秒数
+        :param poll_interval: 轮询间隔秒数
+        :return: 命中的页面对象
         """
 
-        async def _switch_to_window_by_url_key(value):
-            for window_handle in self.get_windows():
-                self._current_page = window_handle
-                if value in window_handle.url:
-                    return window_handle
+        def is_match(url: str) -> bool:
+            if isinstance(value, str):
+                return value in url
+            elif isinstance(value, Pattern):
+                return bool(value.search(url))
+            elif callable(value):
+                return value(url)
             else:
-                raise ValueError("未找到包含【%s】的窗口" % value)
+                raise TypeError(f"不支持的value类型：{type(value)}，仅支持str、正则Pattern、返回布尔的回调函数")
 
-        window_handler = await _switch_to_window_by_url_key(value)
+        async def _poll_find_window():
+            start = asyncio.get_event_loop().time()
+            while asyncio.get_event_loop().time() - start < wait_timeout:
+                for window_handle in self.get_windows():
+                    url = window_handle.url
+                    if is_match(url):
+                        return window_handle
+                await asyncio.sleep(poll_interval)
+            raise ValueError(f"等待{wait_timeout}秒超时，无窗口URL匹配规则【{value}】")
+
+        window_handler = await _poll_find_window()
         if self._current_page != window_handler:
             self._current_page = window_handler
             await window_handler.bring_to_front()
+        return window_handler
+
+    # async def switch_to_window_by_url_key(self, value):
+    #     """
+    #     根据url_key获取窗口
+    #     :param value: url_key
+    #     :return:
+    #     """
+    #
+    #     async def _switch_to_window_by_url_key(value):
+    #         for window_handle in self.get_windows():
+    #             self._current_page = window_handle
+    #             if value in window_handle.url:
+    #                 return window_handle
+    #         else:
+    #             raise ValueError("未找到包含【%s】的窗口" % value)
+    #
+    #     window_handler = await _switch_to_window_by_url_key(value)
+    #     if self._current_page != window_handler:
+    #         self._current_page = window_handler
+    #         await window_handler.bring_to_front()
 
     async def get_windows_by_url_key(self, url_key: str, is_support_fuzzy=True) -> list[Page]:
         """
@@ -250,11 +294,11 @@ class PlaywrightWebOperator:
         await page.go_back()
 
     async def open_in_new_window(self, url, *,
-        timeout: Optional[float] = None,
-        wait_until: Optional[
-            Literal["commit", "domcontentloaded", "load", "networkidle"]
-        ] = None,
-        referer: Optional[str] = None):
+                                 timeout: Optional[float] = None,
+                                 wait_until: Optional[
+                                     Literal["commit", "domcontentloaded", "load", "networkidle"]
+                                 ] = None,
+                                 referer: Optional[str] = None):
         """
         新建Page（窗口）并打开URL
         :param url: url地址
@@ -265,7 +309,7 @@ class PlaywrightWebOperator:
         :return:
         """
         new_page = await self.context.new_page()
-        timeout = int(timeout*1000) if timeout else None
+        timeout = int(timeout * 1000) if timeout else None
         await new_page.goto(url, timeout=timeout, wait_until=wait_until, referer=referer)
         self._current_page = new_page
 
@@ -275,8 +319,8 @@ class PlaywrightWebOperator:
         await self.context.browser.close()
 
     async def load_url(self, url,
-                    timeout: Optional[float] = None,
-                    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"):
+                       timeout: Optional[float] = None,
+                       wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"):
         """
         加载指定url
         :param url: url
@@ -288,7 +332,8 @@ class PlaywrightWebOperator:
         timeout = int(timeout * 1000) if timeout else None
         await page.goto(url, timeout=timeout, wait_until=wait_until)
 
-    async def wait_for_load_state(self, timeout: float, state: Literal["domcontentloaded", "load", "networkidle"] = "load"):
+    async def wait_for_load_state(self, timeout: float,
+                                  state: Literal["domcontentloaded", "load", "networkidle"] = "load"):
         """
         等待页面加载完成
         :param timeout: 等待时间，单位：秒
@@ -296,7 +341,7 @@ class PlaywrightWebOperator:
         :return:
         """
         page = self.get_current_page()
-        await page.wait_for_load_state(state=state, timeout=int(timeout*1000))
+        await page.wait_for_load_state(state=state, timeout=int(timeout * 1000))
 
     async def execute_js(self, js_str: str, arg=None, locator: Optional[Locator] = None):
         """
@@ -405,9 +450,11 @@ class PlaywrightWebOperator:
         """
         context = self.get_current_page() if not iframe else iframe
         try:
-            locator = context.locator(selector)
-            await locator.first.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
-            return None if await locator.count() == 0 else locator.first
+            elem = context.locator(selector).filter(visible=True).first if visible else context.locator(selector).first
+            await elem.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
+            return elem
+            # await locator.first.wait_for(state="visible" if visible else "attached", timeout=wait_time * 1000)
+            # return None if await locator.count() == 0 else locator.first
         except Exception:
             return None
 
@@ -533,7 +580,8 @@ class PlaywrightWebOperator:
         except Exception:
             return None
 
-    async def get_relative_elem_with_wait(self, timeout, elem: Locator, locator: str, visible=True) -> Optional[Locator]:
+    async def get_relative_elem_with_wait(self, timeout, elem: Locator, locator: str, visible=True) -> Optional[
+        Locator]:
         try:
             ret = elem.locator(locator)
             await ret.first.wait_for(timeout=timeout * 1000, state="visible" if visible else "attached")
@@ -552,7 +600,8 @@ class PlaywrightWebOperator:
         """
         return await self.get_relative_elem(elem, f"xpath={xpath}")
 
-    async def get_relative_elem_with_wait_by_xpath(self, timeout: float, elem: Locator, xpath: str, visible=True) -> Optional[Locator]:
+    async def get_relative_elem_with_wait_by_xpath(self, timeout: float, elem: Locator, xpath: str, visible=True) -> \
+            Optional[Locator]:
         """
         获取一个相对 elem 的元素
         - 没有元素返回False

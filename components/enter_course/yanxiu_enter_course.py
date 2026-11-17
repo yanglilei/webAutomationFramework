@@ -47,6 +47,18 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
     # 用户ID
     user_id: str = ""
 
+    async def handle_request(self, request):
+        # 异步监听请求
+        if "/user/getUserInfo" in request.url:
+            authorization = request.headers.get("authorization")
+            srxuserinfo = request.headers.get("srxuserinfo")
+            accesstoken = request.headers.get("x-dt-accesstoken")
+            client_id = request.headers.get("x-dt-clientid")
+
+            headers = {"authorization": authorization, "srxuserinfo": srxuserinfo, "x-dt-accesstoken": accesstoken,
+                       "x-dt-clientid": client_id}
+            self.headers.update(headers)
+
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
         self.segment_id = ""
         prev_output = self.get_prev_output()
@@ -54,16 +66,23 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"}
         # 更新请求头
         self.headers.update(prev_output.get("headers", {}))
-        # 获取第一个未完成的项目
-        project_name = self.node_config.get("node_params", {}).get("project_name", "")
-        if not project_name:
-            return False, "请配置项目名称！"
-        xpath = f"//div[@class='home-project-pane'][.//div[@class='project-name' and text()='{project_name}']]//div[@class='btn-group']//button"
-        btn_enter_project = await self.get_elem_with_wait_by_xpath(10, xpath)
-        if not btn_enter_project:
-            return False, "没找到课程！"
-        # 进入课程
-        await btn_enter_project.click()
+        if not self.headers.get("authorization"):
+            self.get_current_page().on("request", self.handle_request)
+            self.logger.info("刷新页面，重新获取请求头...")
+            await self.refresh()  # 刷新页面登录按钮重新获取请求头
+
+        if not self._is_in_workspace(await self.get_current_url()):
+            # 获取第一个未完成的项目
+            project_name = self.node_config.get("node_params", {}).get("project_name", "")
+            if not project_name:
+                return False, "请配置项目名称！"
+            xpath = f"//div[@class='home-project-pane'][.//div[@class='project-name' and text()='{project_name}']]//div[@class='btn-group']//button"
+            btn_enter_project = await self.get_elem_with_wait_by_xpath(10, xpath)
+            if not btn_enter_project:
+                return False, "没找到课程！"
+            # 进入课程
+            await btn_enter_project.click()
+
         await self.wait_for_url_changed(re.compile(r"workspace/\d+/"))
         self.course_page_window_handle = self.get_current_page()
         # 解析url，获取url参数
@@ -109,7 +128,7 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
             await self._enter_first_topic()
             # 等待弹出新窗口
             await asyncio.sleep(2)
-            await self.switch_to_window_by_url_key(lambda url: "course/list/member" in url)
+            await self.switch_to_window_by_url_key("course/list/member")
             self.course_page_window_handle = self.get_current_page()
             self.tool_id, self.stage_id = self._get_tool_id_and_state_id(await self.get_current_url())
             # 关闭其他窗口
@@ -121,8 +140,8 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
         if self.need_change_subject:  # 修改科目模式，仅有一个专题
             # 获取项目下的模块信息
             self.modules = await self._get_course_modules(self.project_id, self.tool_id)
-            if not self.modules:
-                return False, "获取模块信息失败！"
+            # if not self.modules:
+            #     return False, "获取模块信息失败！"
             # 利用学习时间来判断和别处不同！一个专题中所有课程的时间总和和配置的时间作比较！
             if await self._is_finished(self.modules, self.project_id, self.tool_id, self.segment_id, self.subject_id):
                 return False, f"{self.segment_name}{self.subject_name}-已学完"
@@ -134,8 +153,8 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
             # 第一个专题
             self.tool_id, self.stage_id = unfinished_topics[0]
             self.modules = await self._get_course_modules(self.project_id, self.tool_id)
-            if not self.modules:
-                return False, "获取模块信息失败！"
+            # if not self.modules:
+            #     return False, "获取模块信息失败！"
 
         course_info = await self._get_one_unfinished_course(self.modules, self.project_id, self.tool_id,
                                                             self.segment_id, self.subject_id)
@@ -150,6 +169,11 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
         # total_score, finished_score = await self._get_topic_score(self.project_id, self.tool_id)
         # if total_score and finished_score >= total_score:
         #     return False, f"已学完"
+
+    def _is_in_workspace(self, url: str) -> bool:
+        # 正则：固定前缀 + 可变数字ID + /member 结尾
+        pattern = r'^https://ipx\.yanxiu\.com/train2/workspace/\d+/member$'
+        return bool(re.fullmatch(pattern, url))
 
     def _parse_url(self, page_url):
         parsed_url = urlparse(page_url)
@@ -193,28 +217,35 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
     async def _get_course_modules(self, project_id, tool_id):
         url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/userCourseModule?projectId={project_id}&toolId={tool_id}"
         modules = []
-        response = await self.context.request.get(url, headers=self.headers)
-        if response.status == 200:
-            data = await response.json()
-            modules = data.get("data", {}).get("modules", [])
-            modules = [module.get("moduleId") for module in modules]
-            # for module in modules:
-            #     module_id = module.get("moduleId")
-            # segments = dict(zip(module.get("segmentId").split(" "), module.get("segmentName").split(" ")))
-            # subjects = dict(zip(module.get("subjectId").split(" "), module.get("subjectName").split(" ")))
-            # modules[module_id] = {
-            #     "segments": segments,
-            #     "subjects": subjects
-            # }
+        try:
+            response = await self.context.request.get(url, headers=self.headers)
+            if response.status == 200:
+                data = await response.json()
+                modules = data.get("data", {}).get("modules", [])
+                modules = [module.get("moduleId") for module in modules]
+                # for module in modules:
+                #     module_id = module.get("moduleId")
+                # segments = dict(zip(module.get("segmentId").split(" "), module.get("segmentName").split(" ")))
+                # subjects = dict(zip(module.get("subjectId").split(" "), module.get("subjectName").split(" ")))
+                # modules[module_id] = {
+                #     "segments": segments,
+                #     "subjects": subjects
+                # }
+        except:
+            self.logger.exception("获取课程的模块信息出错")
+            raise
         return modules
 
     @retry(retry=retry_if_exception(lambda e: isinstance(e, Exception)), stop=stop_after_attempt(5), wait=wait_fixed(2))
     async def _get_all_courses_in_one_module(self, project_id, tool_id, module_id, segment_id, subject_id,
                                              page_idx=1) -> list:
         all_course_info = []
-        url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/queryCourseList?projectId={project_id}&toolId={tool_id}&moduleId={module_id}&roleKey=100&pageIndex={page_idx}&pageSize=12&courseType=&segmentId={segment_id}&subjectId={subject_id}&learnStatus=0&courseName="
+        # url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/queryCourseList?projectId={project_id}&toolId={tool_id}&moduleId={module_id}&roleKey=100&pageIndex={page_idx}&pageSize=12&courseType=&segmentId={segment_id}&subjectId={subject_id}&learnStatus=0&courseName="
         # 去掉segmentId
-        url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/queryCourseList?projectId={project_id}&toolId={tool_id}&moduleId={module_id}&roleKey=100&pageIndex={page_idx}&pageSize=12&courseType=&subjectId={subject_id}&learnStatus=0&courseName="
+        if module_id and subject_id:
+            url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/queryCourseList?projectId={project_id}&toolId={tool_id}&moduleId={module_id}&roleKey=100&pageIndex={page_idx}&pageSize=12&courseType=&subjectId={subject_id}&learnStatus=0&courseName="
+        else:
+            url = f"{self.url_scheme}://{self.api_netloc}/task-center/course/V1/queryCourseList?projectId={project_id}&toolId={tool_id}&roleKey=100&pageIndex={page_idx}&pageSize=12&courseType=&learnStatus=0&courseName="
         try:
             response = await self.context.request.get(url, headers=self.headers)
             if response.status == 200:
@@ -229,15 +260,19 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
                                                                   subject_id, page_idx + 1))
         except Exception as e:
             # 异常处理：避免单页请求失败导致整个递归中断
-            self.logger(f"页码 {page_idx} 请求出错：{str(e)}")
+            self.logger.error(f"页码 {page_idx} 请求出错：{str(e)}")
         return all_course_info
 
     async def _get_one_unfinished_course(self, module_ids, project_id, tool_id, segment_id, subject_id):
-        for module_id in module_ids:
-            course_info = await self._get_one_unfinished_course_in_one_module(project_id, tool_id, module_id,
-                                                                            segment_id, subject_id)
-            if course_info:
-                return course_info
+        if module_ids:
+            for module_id in module_ids:
+                course_info = await self._get_one_unfinished_course_in_one_module(project_id, tool_id, module_id,
+                                                                                segment_id, subject_id)
+                if course_info:
+                    return course_info
+        else:
+            return await self._get_one_unfinished_course_in_one_module(project_id, tool_id, "", segment_id,
+                                                                              subject_id)
         return {}
 
     async def _get_one_unfinished_course_in_one_module(self, project_id, tool_id, module_id, segment_id,
@@ -256,9 +291,13 @@ class YanxiuEnterCourse(BaseEnterCourseTaskNode):
 
     async def _cal_total_learned_time(self, module_ids, project_id, tool_id, segment_id, subject_id):
         all_course_info = []
-        for module_id in module_ids:
-            all_course_info.extend(await self._get_all_courses_in_one_module(project_id, tool_id, module_id, segment_id,
-                                                        subject_id))
+        if module_ids:
+            for module_id in module_ids:
+                all_course_info.extend(await self._get_all_courses_in_one_module(project_id, tool_id, module_id, segment_id,
+                                                            subject_id))
+        else:
+            all_course_info = await self._get_all_courses_in_one_module(project_id, tool_id, "", segment_id,
+                                                                        subject_id)
         total_learned_time = 0
         for course_info in all_course_info:
             if course_info.get("completeRate") == 100:

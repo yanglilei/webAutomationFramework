@@ -74,9 +74,10 @@ class YanxiuDiscussionActivityTask(BasePYNode):
         status, desc = await self.enter_activity()
         if not status:
             self.logger.error(f"用户【{self.username}】进入研讨活动失败：{desc}")
+            self.user_manager.update_record_by_username(self.username, {5: desc})
             return False
 
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
         await self.switch_to_window_by_url_key("guide/activity/list")
         self.activity_page_window_handle = self.get_current_page()
         await self._do_activity()
@@ -85,11 +86,11 @@ class YanxiuDiscussionActivityTask(BasePYNode):
         return True
 
     async def enter_activity(self):
-        xpath = "//div[contains(@class, 'tool-card')][.//div[@class='left'][.//p[contains(text(), '研讨活动')]]][.//div[@class='right']/span[text()!=20]]"
+        xpath = "//div[contains(@class, 'tool-card')][.//div[@class='left'][.//p[contains(text(), '研讨活动') or contains(text(), '研修活动')]]][.//div[@class='right'][number(span[1]) != number(substring-before(substring-after(span[2], '/'), '分')) ]]"
         btn_enter_activity = await self.get_elem_with_wait_by_xpath(10, xpath)
         if not btn_enter_activity:
             self.logger.info(f"用户【{self.username}】研讨活动已合格！")
-            return True, "研讨活动已合格"
+            return False, "研讨活动已合格"
         try:
             await btn_enter_activity.click()
         except:
@@ -103,13 +104,13 @@ class YanxiuDiscussionActivityTask(BasePYNode):
         activities = await self.get_elems_with_wait_by_xpath(10, xpath)
         for activity in activities:
             await activity.click()
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
             await self.switch_to_window_by_url_key("schoolCenter/activity")
             # 点击我要参加
             btn_sign_in = await self.get_elem_with_wait_by_xpath(5, "//div[@class='sign']/span[text()='我要参加']")
             if btn_sign_in:
                 await btn_sign_in.click()
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
             # 获取多个活动环节，遍历活动：
             # 点击进入活动
             first_progress = await self.get_elem_with_wait_by_xpath(5, "(//div[@class='point-list']//li)[1]")
@@ -120,8 +121,8 @@ class YanxiuDiscussionActivityTask(BasePYNode):
                 continue
 
             await first_progress.click()
-            progresses = await self.get_elems_with_wait_by_xpath(5, "//div[@class='items-list']//li[./p[@class='tache-name' and contains(text(), '讨论')]]")
-            for progress in progresses:
+            discussion_progresses = await self.get_elems_with_wait_by_xpath(5, "//div[@class='items-list']//li[./p[@class='tache-name' and contains(text(), '讨论')]]")
+            for progress in discussion_progresses:
                 await progress.click()
                 el_title = await self.get_elem_with_wait_by_xpath(3, "//div[@class='task-tle']/h2")
                 title = await el_title.text_content()
@@ -142,6 +143,11 @@ class YanxiuDiscussionActivityTask(BasePYNode):
                 await btn_commit.click()
                 self.logger.info(f"用户【{self.username}】提交活动【{title}】成功！提交的答案是【{answer}】")
                 await asyncio.sleep(1)
+
+            reading_progresses = await self.get_elems_with_wait_by_xpath(5, "//div[@class='items-list']//li[./p[@class='tache-name' and contains(text(), '文件')]]")
+            for progress in reading_progresses:
+                await progress.click()
+                await asyncio.sleep(3)
 
             await self.close_window(self.get_current_page())
             await self.switch_to_window(self.activity_page_window_handle)

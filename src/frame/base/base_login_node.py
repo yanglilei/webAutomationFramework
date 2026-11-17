@@ -29,7 +29,7 @@ class BaseLoginTaskNode(BasePYNode):
         except Exception as e:
             if self.user_mode == 1:  # 表格模式，更新表格中的内容
                 self.user_manager.update_login_msg_by_username(self.username, "登录异常")
-            self.logger.error(f"登录异常：{str(e)}")
+            self.logger.exception("登录异常：")
             self.node_result["is_success"] = False
             self.node_result["error_msg"] = f"登录异常：{str(e)}"
             return False
@@ -69,7 +69,7 @@ class BaseLoginTaskNode(BasePYNode):
             await self.close_other_windows(self.get_latest_window())
 
         # 加载页面
-        await self.load_url(self.login_url)
+        await self.load_url(self.login_url, 30, "networkidle")
         # 进入登录页面
         await self.enter_login_page()
         # 登录

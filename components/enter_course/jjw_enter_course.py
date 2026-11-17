@@ -3,7 +3,7 @@ import re
 from dataclasses import field, dataclass
 from typing import Tuple
 
-from playwright.async_api import Locator
+from playwright.async_api import Locator, Page
 from tenacity import stop_after_attempt, wait_fixed, retry_if_exception_type, retry
 
 from src.frame.base import BaseEnterCourseTaskNode
@@ -28,8 +28,6 @@ class JJWEnterCourse(BaseEnterCourseTaskNode):
     course_name: str = ""
     # 排除的课程
     excluded_courses: list = field(default_factory=list)
-    # 课程类型
-    course_type: str = ""
     # 项目编码
     project_code: str = ""
     # 主窗口的URL
@@ -72,7 +70,7 @@ class JJWEnterCourse(BaseEnterCourseTaskNode):
             # 学习通过了，无需学习
             self.logger.info(f"学习成绩已经合格了，准备退出")
             # self.do_after_finished_all_courses()
-            return False, f"{self.course_type.split('|')[0]}已学完"
+            return False, f"已学完"
         else:
             # 处理完善个人信息的弹窗
             # await self._handle_complete_info_tips()
@@ -212,11 +210,16 @@ class JJWEnterCourse(BaseEnterCourseTaskNode):
             raise Exception("获取项目ID失败")
 
     async def enter_course(self) -> Tuple[bool, str]:
+        if await self._is_passed():
+            # 学习通过了，无需学习
+            self.logger.info(f"学习成绩已经合格了，准备退出")
+            # self.do_after_finished_all_courses()
+            return False, f"已学完"
         # 获得第一个未读的课程
         course = await self._get_pub_first_course()
         if not course:
             self.logger.info("用户【%s】没有未学习的课程，准备退出" % self.username_showed)
-            return False, f"{self.course_type.split('|')[0]}已学完"
+            return False, f"已学完"
         # 展开章节，让课程元素可见
         if not await course.is_visible():
             try:
@@ -248,14 +251,11 @@ class JJWEnterCourse(BaseEnterCourseTaskNode):
             self.logger.exception(f"用户【{self.username_showed}】点击进入课程【{course_name}】失败")
             return False, "点击进入课程失败"
         else:
-            await asyncio.sleep(2)
-            await self.switch_to_latest_window()
-            # 等待打开新窗口
-            max_retry_count = 20
-            while "intoSelectCourseVideo" not in await self.get_current_url() and max_retry_count > 0:
-                await asyncio.sleep(1)
-                max_retry_count -= 1
-                await self.switch_to_latest_window()
+            # await asyncio.sleep(2)
+            try:
+                await self.switch_to_window_by_url_key("intoSelectCourseVideo")
+            except:
+                return False, "进入课程失败，没有弹出课程的窗口"
         return True, course_name
 
     async def handle_after_course_finished(self) -> Tuple[bool, str]:
@@ -271,8 +271,8 @@ class JJWEnterCourse(BaseEnterCourseTaskNode):
             # self.close_window(self.web_browser.window_handles[-1])
             # self.web_browser.switch_to.window(self.main_window_url)
             # self.web_browser.refresh()
-            await self.close_latest_window()
             await self.switch_to_window_by_url_key(self.main_window_url)
+            await self.close_other_windows()
             await self.refresh()
         return True, ""
 

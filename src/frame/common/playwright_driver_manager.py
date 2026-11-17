@@ -243,9 +243,9 @@ class WebDriverManager:
                 "--disable-blink-features=AutomationControlled",
                 # "--enable-automation",
                 # 通用兼容参数
-                # "--no-sandbox",
-                # "--disable-dev-shm-usage",
-                # "--disable-extensions",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-extensions",
                 # "--disable-web-security",
                 # "--ignore-certificate-errors",
                 # "--no-service-autorun",
@@ -253,17 +253,19 @@ class WebDriverManager:
             ]
 
             if driver_config.headless_mode == "1":
-                common_args.extend(['--enable-gpu',
-                                    '--use-gl=angle',  # 或 'egl'、'desktop'
-                                    '--enable-webgl',
-                                    '--enable-accelerated-2d-canvas',
-
-                                    # 禁用软件渲染（强制使用 GPU）
-                                    '--disable-software-rasterizer',
-
-                                    # 解决无头模式下 GPU 兼容性问题
-                                    '--ignore-gpu-blocklist',
-                                    '--enable-features=VaapiVideoDecoder'])
+                pass
+                # common_args.extend(['--disable-gpu'])
+                # common_args.extend(['--enable-gpu',
+                #                     '--use-gl=angle',  # 或 'egl'、'desktop'
+                #                     '--enable-webgl',
+                #                     '--enable-accelerated-2d-canvas',
+                #
+                #                     # 禁用软件渲染（强制使用 GPU）
+                #                     '--disable-software-rasterizer',
+                #
+                #                     # 解决无头模式下 GPU 兼容性问题
+                #                     '--ignore-gpu-blocklist',
+                #                     '--enable-features=VaapiVideoDecoder'])
 
         elif driver_config.browser_type == "1":
             # 1. 通用参数（所有模式都生效）
@@ -655,7 +657,7 @@ class WebDriverManagerBak:
             "headless": driver_config.headless_mode == "1",
             "args": final_args,
             # 核心：禁用Playwright默认自动化参数（所有模式通用）
-            "channel": "chrome",
+            "channel": "chromium",
             # "ignore_default_args": ["--enable-automation"]
         }
 

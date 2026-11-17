@@ -118,7 +118,7 @@ class FJRCMonitorCourse(BaseMonitorCourseTaskNode):
                 learned_time_span = self.cur_learned_time - self.pre_learned_time
                 content_name = await self._get_content_name()
 
-                if sys_time_span - learned_time_span > 60 and learned_time_span == 0 and self.content_name == content_name:
+                if sys_time_span - learned_time_span > 60 and self.content_name == content_name:
                     # 1分钟了，学习时间没有更新了，则重启该页面
                     self.logger.info("【%s】卡住1分钟了，准备重启..." % self.content_name)
                     # 退出当前的监听轮训，外部会重启

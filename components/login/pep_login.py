@@ -59,6 +59,11 @@ class PEPLogin(BaseLoginTaskNode):
         verify_code = MyDdddOcr.extract_verify_code_from_bytes(await verify_code_img.screenshot())
         await verify_code_input.fill(verify_code)
 
+        btn_agree = await self.get_elem_with_wait_by_xpath(5, "//input[@id='agree1']")
+        if btn_agree:
+            await btn_agree.click()
+            await asyncio.sleep(1)
+
         await login_btn.click()
         await asyncio.sleep(3)
         fail_tips = await self.get_elem_with_wait_by_xpath(3, "//li[@id='errmsg1']")

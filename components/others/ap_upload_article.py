@@ -5,8 +5,6 @@ from typing import Tuple, Dict, Any
 from playwright.async_api import Locator
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
-from components_deps.jinja2.async_utils import auto_aiter
-from src.frame.base.base_enter_course_node import BaseEnterCourseTaskNode
 from src.frame.base.base_task_node import BasePYNode
 from src.frame.common.exceptions import BusinessException
 from src.utils import UploadLocalFile

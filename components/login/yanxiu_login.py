@@ -1,27 +1,28 @@
 import asyncio
 import random
+from pathlib import Path
 from typing import Tuple
+
 from src.frame.base import BaseLoginTaskNode
+from src.utils import SysPathUtils
 
 
 class YanxiuLogin(BaseLoginTaskNode):
 
+    # 异步监听请求
+    async def handle_request(self, request):
+        if "/user/getUserInfo" in request.url:
+            authorization = request.headers.get("authorization")
+            srxuserinfo = request.headers.get("srxuserinfo")
+            accesstoken = request.headers.get("x-dt-accesstoken")
+            client_id = request.headers.get("x-dt-clientid")
+
+            headers = {"authorization": authorization, "srxuserinfo": srxuserinfo, "x-dt-accesstoken": accesstoken,
+                       "x-dt-clientid": client_id}
+            self.set_output_data("headers", headers)
+
     async def do_login(self) -> Tuple[bool, str]:
-
-        # 异步监听请求
-        async def handle_request(request):
-            if "/user/getUserInfo" in request.url:
-                authorization = request.headers.get("authorization")
-                srxuserinfo = request.headers.get("srxuserinfo")
-                accesstoken = request.headers.get("x-dt-accesstoken")
-                client_id = request.headers.get("x-dt-clientid")
-
-                headers = {"authorization": authorization, "srxuserinfo": srxuserinfo, "x-dt-accesstoken": accesstoken,
-                            "x-dt-clientid": client_id}
-                self.set_output_data("headers", headers)
-
-        self.get_current_page().on("request", handle_request)
-
+        self.get_current_page().on("request", self.handle_request)
         return await self._login()
 
     async def _login(self) -> Tuple[bool, str]:
@@ -63,23 +64,52 @@ class YanxiuLogin(BaseLoginTaskNode):
                     self.logger.error("没有找到登录按钮，页面加载失败，可能网络问题！")
                     desc = "网络问题（没有加载出登录按钮）"
                 else:
-                    # 延迟3秒，让浏览器加载
-                    await asyncio.sleep(3)
-                    if "/home" in await self.get_current_url():
-                        # 登录成功之后跳转地址：https://fj.rcpxpt.com/usersCenter
-                        # 页面发生了跳转，跳转到用户中心页面，则表示，登录成功
-                        status = True
+                    el_fail_tips = await self.get_elem_with_wait_by_xpath(3,
+                        "//div[@class='login-content']//div[@class='error-msg']//span")
+                    if el_fail_tips:
+                        desc = await el_fail_tips.text_content()
+                        status = False
                     else:
+                        # 等待页面跳转
                         try:
-                            # 登录失败，获取失败提示信息
-                            fail_tips_elem = await self.get_elem("//div[@class='login-content']//div[@class='error-msg']//span")
+                            await self.wait_for_url_changed(lambda url : "train2/home" in url or "train2/workspace" in  url, 3)
                         except:
-                            self.logger.error("获取不到登录失败提示信息")
-                            desc = "登录失败（原因未知）"
-                        else:
-                            if not fail_tips_elem:
-                                # 等待3秒后，未获取到登录失败提示信息，则表示登录失败
+                            await self.refresh()
+                            try:
+                                await self.wait_for_url_changed(lambda url: "train2/home" in url or "train2/workspace" in  url, 5)
+                            except:
+                                # 页面没有发生跳转
                                 desc = "登录失败（点击登录后页面未跳转）"
+                                status = False
+                                await self.screenshot(
+                                    Path(SysPathUtils.get_tmp_file_dir(), f"{self.username}_login_error.png"))
                             else:
-                                desc = await fail_tips_elem.text_content()
+                                status = True
+                        else:
+                            status = True
+
+                    # try:
+                    #     await self.wait_for_url_changed("/home", 5)
+                    # except:
+                    #     # 超时了
+                    # # 延迟3秒，让浏览器加载
+                    # await asyncio.sleep(3)
+                    # if "/home" in await self.get_current_url():
+                    #     # 登录成功之后跳转地址：https://fj.rcpxpt.com/usersCenter
+                    #     # 页面发生了跳转，跳转到用户中心页面，则表示，登录成功
+                    #     status = True
+                    # else:
+                    #     try:
+                    #         # 登录失败，获取失败提示信息
+                    #         fail_tips_elem = await self.get_elem(
+                    #             "//div[@class='login-content']//div[@class='error-msg']//span")
+                    #     except:
+                    #         self.logger.error("获取不到登录失败提示信息")
+                    #         desc = "登录失败（原因未知）"
+                    #     else:
+                    #         if not fail_tips_elem:
+                    #             # 等待3秒后，未获取到登录失败提示信息，则表示登录失败
+                    #             desc = "登录失败（点击登录后页面未跳转）"
+                    #         else:
+                    #             desc = await fail_tips_elem.text_content()
         return status, desc

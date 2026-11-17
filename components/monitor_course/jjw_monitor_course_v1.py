@@ -9,9 +9,11 @@ from src.frame.base.base_monitor_course_node import BaseMonitorCourseTaskNode
 
 
 @dataclass(init=False)
-class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
+class JJWMonitorCourseV1(BaseMonitorCourseTaskNode):
     """
-    继教网正常版，需要播放学完全部视频和文档，视频可以自动切换下一个
+    继教网（师学通、海西）正常版，需要播放学完全部视频和文档。
+    前提：视频可以自动切换下一个
+    观看逻辑：把所有非视频点一遍，然后从第一个视频开始看，时间不够从第一个视频继续看
     """
     mode: int = 0  # 模式；0-视频模式；1-无视频模式
     content_name: str = ""  # 目录名称
@@ -33,7 +35,8 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
             self.mode = 0
             # 对于有视频的课程，把所有非视频的目录都点击一遍即可
             for content in self.non_video_contents:
-                await content.click()
+                # await content.click()
+                await self.js_click(content)
                 await asyncio.sleep(1)
             current_content = self.video_contents[0]
         else: # 没有视频
@@ -41,7 +44,8 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
             current_content = self.non_video_contents[0]
 
         # 点击第一个目录开始学习
-        await current_content.click()
+        # await current_content.click()
+        await self.js_click(current_content)
         self.content_name = await current_content.get_attribute("title")
 
 
@@ -65,28 +69,32 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
 
             total_time = await self.get_course_total_time()
             learned_time = await self.get_course_learned_time()
-            self.logger.info(f"【{self.course_name}】已学习：{learned_time}/{total_time}分钟")
+            time_desc = f"{learned_time}/{total_time}分钟" if total_time else f"{learned_time}分钟"
+            self.logger.info(f"【{self.course_name}】已学习：{time_desc}")
 
             # 处理最后一个视频
             if await self.is_video_ended("div.ccH5playerBox video") and await self.is_last_video():
                 self.logger.info(f"【{self.content_name}】已学完（最后一个），开始轮训播放视频...")
                 video_contents, _ = await self._get_all_contents()
-                await video_contents[0].click()
+                # await video_contents[0].click()
+                await self.js_click(video_contents[0])
         else:
             # 挂机20分钟后（3秒轮训一次，400次为20分钟），切换到下一个目录
             if self.poll_count != 0 and self.poll_count % 400 == 0:
                 self.logger.info(f"【{self.content_name}】已学完，挂机20分钟后，切换到下一个目录...")
                 next_content = await self.get_next_non_video_content()
                 if next_content:
-                    await next_content.click()
+                    # await next_content.click()
+                    await self.js_click(next_content)
                 else:
                     # 没有下一个目录了，重新切换到第一个目录
                     _, non_video_contents = await self._get_all_contents()
-                    await non_video_contents[0].click()
+                    await self.js_click(non_video_contents[0])
 
             total_time = await self.get_course_total_time()
             learned_time = await self.get_course_learned_time()
-            self.logger.info(f"已学习时间：{learned_time}/{total_time}分钟")
+            time_desc = f"{learned_time}/{total_time}分钟" if total_time else f"{learned_time}分钟"
+            self.logger.info(f"【{self.course_name}】已学习：{time_desc}")
 
         finished_tips_elem = await self.get_elem_by_xpath("//span[@id='bestMinutesTips']")
         if finished_tips_elem and await finished_tips_elem.is_visible():
@@ -110,11 +118,11 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         return True if not await self.get_next_non_video_content() else False
 
     async def get_next_non_video_content(self):
-        xpath = "//li[contains(@class, 'cur active')]//following::li[contains(@class, 'Learned0')]"
+        xpath = "//li[contains(@class, 'cur active')]//following::li[contains(@class, 'Learned') and not(contains(@class, 'type_1'))]"
         return await self.get_elem_by_xpath(xpath)
 
     async def _get_all_contents(self):
-        xpath = "//li[contains(@class, 'Learned0')]"
+        xpath = "//li[contains(@class, 'Learned')]"
         all_contents = await self.get_elems_with_wait_by_xpath(5, xpath)
         video_contents = []
         non_video_contents = []
@@ -183,14 +191,31 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
         #             continue_learn.click()
         if await self.get_elem_by_xpath("//div[contains(@class,'layui-layer layui-layer-page')]"):
             # 弹出了“你还在认真学习吗？”的对话框
-            verify_code_elem = await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']")
-            verify_code_val = await verify_code_elem.text_content()
-            await (await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']")).fill(
-                verify_code_val)
-            await (await self.get_elem_by_xpath(
-                "//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")).click()
+            verify_code_elem = await self.get_elem_with_wait_by_xpath(2,
+                                                                      "//div[contains(@class,'layui-layer layui-layer-page')]//span[@id='codespan']")
+            if verify_code_elem:
+                verify_code_val = await verify_code_elem.text_content()
+            else:
+                self.logger.error("获取验证码失败，等待下一次获取！")
+                return
+
+            code_input = await self.get_elem_with_wait_by_xpath(1,
+                                                           "//div[contains(@class,'layui-layer layui-layer-page')]//input[@id='code']")
+            if code_input:
+                await code_input.clear()
+                await asyncio.sleep(0.5)
+                await code_input.fill(verify_code_val)
+            else:
+                self.logger.error("获取验证码输入框失败，等待下一次获取！")
+                return
+            btn_commit = await self.get_elem_with_wait_by_xpath(1,
+                                                           "//div[contains(@class,'layui-layer layui-layer-page')]//a[text()='提交']")
+            if btn_commit:
+                await self.js_click(btn_commit)
+                await self.wait_for_disappeared(20, "//div[contains(@class,'layui-layer layui-layer-page')]")
+            else:
+                self.logger.error("点击失败，等待下一次获取！")
+                return
             self.logger.info("处理“您还在认真学习吗？“弹窗成功")
 
     async def _handle_pause(self):
@@ -281,7 +306,7 @@ class HXJYWMonitorCourse(BaseMonitorCourseTaskNode):
                     xpath = "(//li[contains(@class, 'type_1')])[1]"
                     el_next_content = await self.get_elem_with_wait_by_xpath(3, xpath)
                     if not el_next_content:  # 没有视频，则获取第一个目录，最后肯定会找到一个
-                        xpath = "(//li[contains(@class, 'Learned0')])[1]"
+                        xpath = "(//li[contains(@class, 'Learned')])[1]"
                         el_next_content = await self.get_elem_with_wait_by_xpath(3, xpath)
                 return el_next_content
             else:  # 上一个目录是视频会自动切换！

@@ -75,6 +75,7 @@ class BaseMonitorCourseTaskNode(BasePYNode):
         self.logger.info(f"===== 启动【课程监控】流程 =====")
         try:
             self.state = NodeState.RUNNING
+            self.poll_count = 0
             # 1.重置节点结果
             self.reset_node_result()
             # 2.处理上一步的输出数据

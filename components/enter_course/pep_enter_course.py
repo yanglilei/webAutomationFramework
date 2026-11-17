@@ -17,7 +17,7 @@ class PEPEnterCourse(BaseEnterCourseTaskNode):
         return await self._enter_courses(subject_ids)
 
     async def handle_after_course_finished(self) -> Tuple[bool, str]:
-        pass
+        return True, ""
 
     async def get_subjects(self):
         elements = await self.get_elems_with_wait_by_xpath(10,
@@ -38,12 +38,13 @@ class PEPEnterCourse(BaseEnterCourseTaskNode):
 
     async def _enter_courses(self, subject_ids):
         # current_url = self.get_current_url()
-        url_prefix = "https://wp.pep.com.cn/web/index.php?/px/index/186"
+        # url_prefix = "https://wp.pep.com.cn/web/index.php?/px/index/186"
+        url_prefix = "https://wp.pep.com.cn/web/index.php?/px/index/196"
         # 获取第一个窗口的url
         current_url = await self.get_current_url()
 
         for subject_id in subject_ids:
-            url = url_prefix + f'/{subject_id}'
+            url = current_url + f'/{subject_id}'
             await self.open_in_new_window(url)
             await self.switch_to_latest_window()
             await self._close_alert()
@@ -91,10 +92,10 @@ class PEPEnterCourse(BaseEnterCourseTaskNode):
         # 关闭提示
         await self._close_alert()
         # 获取必修课的开课时间
-        xpath = "//tbody[.//td[@class='txt_pxkc_xk'][./h4[contains(text(), '必修')]]]"
+        xpath = "//tbody[.//td[@class='txt_pxkc_xk'][./h4[contains(text(), '必学')]]] | //tbody[.//td[@class='txt_pxkc_xk'][./h4[contains(text(), '必修')]]]"
         elems = await self.get_elems_with_wait_by_xpath(4, xpath)
         if not elems:
-            return subject_name, "异常：无必修课"
+            return subject_name, "异常：无必学（必修）课"
 
         enter_course_status = []
         for elem in elems:
@@ -131,7 +132,7 @@ class PEPEnterCourse(BaseEnterCourseTaskNode):
             raise BusinessException("未找到【学习数据】按钮！")
         await btn_progress.click()
 
-        xpath = "//li[@class='fl ell'][contains(text(), '必修')]"
+        xpath = "//li[@class='fl ell'][contains(text(), '必学')] | //li[@class='fl ell'][contains(text(), '必修')]"
         # 获取必修课
         elems = await self.get_elems_with_wait_by_xpath(10, xpath)
         target_course_names = []

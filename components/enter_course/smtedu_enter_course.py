@@ -1,7 +1,8 @@
 import asyncio
 import decimal
+import json
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Tuple, Dict
 
 from playwright.async_api import Page
 
@@ -11,6 +12,16 @@ from src.frame.common.exceptions import BusinessException
 
 @dataclass(init=False)
 class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
+    """
+    智慧平台进入课程
+    可配参数：
+    is_need_sign_in（项目是否需要报名）true-要报名；false-不用报名（不配的默认值）；
+    time_fix_deviation（学时修正偏差值）默认值0.25
+    必配置参数：
+    project_id（项目ID）
+
+    版本：V0.0.1
+    """
     # 课程信息，课程名称：{duration:课程时长，id:课程ID}
     course_info: dict = field(default_factory=dict)
     project_id: str = ""
@@ -30,24 +41,34 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
     # 培训是否需要报名
     is_need_sign_in: bool = False
     # 学时修正偏差值
-    time_fix_deviation: decimal.Decimal = decimal.Decimal("0.3")
+    time_fix_deviation: decimal.Decimal = decimal.Decimal("0.25")
+    # 认证相关的请求头
+    auth_headers: Dict = field(default_factory=dict)
 
     async def prepare_before_first_enter_course(self) -> Tuple[bool, str]:
         # 切换到中小学智慧平台
+        headers = self.get_prev_output().get("headers")
+        self.auth_headers = headers if headers else {}
         self.course_info = {}
         self.train_info = {}
         self.is_need_sign_in = self.node_config.get("node_params", {}).get("is_need_sign_in", False)
+        self.time_fix_deviation = decimal.Decimal(self.node_config.get("node_params", {}).get("time_fix_deviation", "0.25"))
         self.project_id = await self.get_project_id()
         if not self.project_id:
             return False, "未找到项目ID"
 
-        self.user_id = await self._get_user_id()
         project_url = self.PROJECT_URL_TMPL % self.project_id
-        await self.open_in_new_window(project_url)
+        await self.open_in_new_window(project_url, timeout=20, wait_until="networkidle")
         await asyncio.sleep(3)
         await self.switch_to_window_by_url_key(project_url)
         self.course_page_window_handler = self.get_current_page()
         await self.close_other_windows(self.course_page_window_handler)
+        # 获取用户ID，必须在项目的页面中获取
+        user_info = self.get_prev_output().get("user_info", {})
+        if not user_info.get("id"):
+            self.user_id = await self._get_user_id()
+        else:
+            self.user_id = user_info.get("id")
         # 获取培训信息
         """
         {
@@ -193,6 +214,10 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
             await self._sign_in()
         return True, ""
 
+    # async def format_train_info(self, train_info: dict):
+    #     for phase_info in train_info.get("train_phase_list"):
+    #         phase_id = phase_info.get("id")
+
     async def enter_course(self) -> Tuple[bool, str]:
         await self.init_course_info()
         target_course_url, course_info = await self._get_target_course()
@@ -206,7 +231,7 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
             self.set_output_data("course_page", self.course_page_window_handler)
             self.set_output_data("course_info", course_info)
             self.set_output_data("train_id", self.train_info.get("train").get("id"))
-            self.set_output_data("phase_period_hour_limit", self._get_phase_period_hour_limit(course_info["phase_id"]))
+            self.set_output_data("phase_period_hour_limit", self._get_phase_period_hour_limit(course_info["phase_id"]) if course_info["phase_id"] else course_info["max_period"])
             self.set_output_data("user_id", self.user_id)
             # self._trigger_first_content()
             return True, self.course_name
@@ -227,10 +252,12 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         #         self.course_info[ci[0]] = {}
         #         self.course_info[ci[0]]["duration"] = float(ci[1])
         #         self.course_info[ci[0]]["name"] = ci[0]
-        await self._get_course_info()
+        self.course_info = await self._get_course_info()
 
     async def _get_user_id(self):
-        return await self.execute_js("localStorage.getItem('_user_id');")
+        user_info = await self.execute_js("localStorage.getItem('X-EDU-WEB-USER');")
+        # user_id = await self.execute_js("localStorage.getItem('_user_id');")
+        return json.loads(user_info)["user_id"]
 
     async def _get_train_info(self):
         url = f"https://s-file-1.ykt.cbern.com.cn/teach/api_static/trains/{self.project_id}.json"
@@ -238,11 +265,10 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         try:
             train_info = await self.context.request.get(url=url, headers=headers)
         except:
-            self.logger.error("获取用户信息失败")
+            self.logger.error("获取培训信息失败")
             raise
         else:
             return await train_info.json()
-
 
     async def _get_finished_info(self):
         # 获取课程的完成情况
@@ -252,7 +278,7 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         try:
             finished_info = await self.context.request.get(url=url, headers=headers)
         except:
-            self.logger.error("获取用户信息失败")
+            self.logger.error("获取用户完成情况信息失败")
             raise
 
         return await finished_info.json()
@@ -261,29 +287,31 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         finished_info = await self._get_finished_info()
         url = f"https://s-file-1.ykt.cbern.com.cn/teach/api_static/trains/{self.project_id}/train_courses.json"
         headers = {"User-Agent": await self.user_agent(), "Cookies": await self.cookie_to_str()}
-
+        course_info = {}
         try:
-            course_info = await self.context.request.get(url=url, headers=headers)
+            resp = await self.context.request.get(url=url, headers=headers)
         except:
-            self.logger.error("获取用户信息失败")
+            self.logger.error("获取课程信息失败")
             raise
         else:
-            course_info_obj = await course_info.json()
+            course_info_obj = await resp.json()
             for ci in course_info_obj:
                 phase_id = ci["phase_id"]
-                if phase_id not in self.course_info:
-                    self.course_info[phase_id] = {}
+                if phase_id not in course_info:
+                    course_info[phase_id] = {}
                 course_name = ci["title"].strip()
 
-                if course_name not in self.course_info[phase_id]:
-                    self.course_info[phase_id][course_name] = {}
+                if course_name not in course_info[phase_id]:
+                    course_info[phase_id][course_name] = {}
 
-                self.course_info[phase_id][course_name]["name"] = course_name
-                self.course_info[phase_id][course_name]["id"] = ci["course_id"]
-                self.course_info[phase_id][course_name]["max_period"] = ci["max_period"]
-                self.course_info[phase_id][course_name]["finished_period"] = finished_info.get(ci["course_id"], 0.0)
-                self.course_info[phase_id][course_name]["total_period"] = ci["total_period"]
-                self.course_info[phase_id][course_name]["phase_id"] = phase_id
+                course_info[phase_id][course_name]["name"] = course_name
+                course_info[phase_id][course_name]["id"] = ci["course_id"]
+                course_info[phase_id][course_name]["max_period"] = ci["max_period"]
+                course_info[phase_id][course_name]["finished_period"] = finished_info.get(ci["course_id"], 0.0)
+                course_info[phase_id][course_name]["total_period"] = ci["total_period"]
+                course_info[phase_id][course_name]["phase_id"] = phase_id
+
+        return course_info
 
     def _get_phase_period_hour_limit(self, phase_id):
         ret = None
@@ -298,21 +326,57 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         phase_id = None
         finished_info = await self._get_finished_info()
         for train_phase in self.train_info.get("train_phase_list"):
-            if decimal.Decimal(finished_info.get(train_phase["id"], "0.0")) < decimal.Decimal(train_phase["period_hour_limit"]) + self.time_fix_deviation:  # 多加0.3学时避免学时不够！
+            if decimal.Decimal(finished_info.get(train_phase["id"], "0.0")) < decimal.Decimal(
+                    train_phase["period_hour_limit"]) + self.time_fix_deviation:  # 多加0.3学时避免学时不够！
                 phase_id = train_phase["id"]
                 break
         return phase_id
+
+    async def _remove_finished_phase(self):
+        # 获取第一个未完成的阶段
+        finished_info = await self._get_finished_info()
+        for train_phase in self.train_info.get("train_phase_list"):
+            if decimal.Decimal(finished_info.get(train_phase["id"], "0.0")) >= decimal.Decimal(
+                    train_phase["period_hour_limit"]) + self.time_fix_deviation:  # 多加0.3学时避免学时不够！
+                # 排除掉已完成的专题
+                self.course_info.pop(train_phase["id"])
+
+    async def _get_target_course_id(self):
+        course_info = None
+        is_found_target_course = False
+        for phases in self.course_info.values():
+            for course in phases.values():
+                if decimal.Decimal(course["max_period"]) > decimal.Decimal(0):  # 针对有认定的课程
+                    if decimal.Decimal(course["finished_period"]) < decimal.Decimal(
+                            course["max_period"]) + self.time_fix_deviation:
+                        # 未完成
+                        course_info = course
+                        is_found_target_course = True
+                        break
+                else:  # 没有认定的课程
+                    if decimal.Decimal(course["finished_period"]) < decimal.Decimal(
+                            course["total_period"]) + self.time_fix_deviation:
+                        # 未完成
+                        course_info = course
+                        is_found_target_course = True
+                        break
+
+            if is_found_target_course:
+                break
+        return course_info
 
     async def _get_first_unfinished_course_id(self, phase_id):
         course_info = None
         for course in self.course_info.get(phase_id).values():
             if decimal.Decimal(course["max_period"]) > decimal.Decimal(0):  # 针对有认定的课程
-                if decimal.Decimal(course["finished_period"]) < decimal.Decimal(course["max_period"]) + self.time_fix_deviation:
+                if decimal.Decimal(course["finished_period"]) < decimal.Decimal(
+                        course["max_period"]) + self.time_fix_deviation:
                     # 未完成
                     course_info = course
                     break
             else:  # 没有认定的课程
-                if decimal.Decimal(course["finished_period"]) < decimal.Decimal(course["total_period"]) + self.time_fix_deviation:
+                if decimal.Decimal(course["finished_period"]) < decimal.Decimal(
+                        course["total_period"]) + self.time_fix_deviation:
                     # 未完成
                     course_info = course
                     break
@@ -320,15 +384,21 @@ class SMTEDUEnterCourse(BaseEnterCourseTaskNode):
         return course_info
 
     async def _get_target_course(self):
-        phase_id = await self._get_first_unfinished_phase_id()
-        if not phase_id:
-            self.logger.info("所有课程已完成！")
-            return None, None
+        # phase_id = await self._get_first_unfinished_phase_id()
+        # if not phase_id:
+        #     self.logger.info("所有课程已完成！")
+        #     return None, None
 
-        course_info = await self._get_first_unfinished_course_id(phase_id)
-        if not course_info:
-            self.logger.error("异常！课程的学习时间，不够认定的学时！")
-            return None, None
+        # course_info = await self._get_first_unfinished_course_id(phase_id)
+        # if not course_info:
+        #     self.logger.error("异常！课程的学习时间，不够认定的学时！")
+        #     return None, None
+
+        # 优化！有些专题没有在阶段下，所以self.course_info中的key为None，这个时候就不能用就旧方式来（获取第一个未完成的阶段）！
+        # 反过来，要排除掉已完成的阶段！
+        # 排除掉已完成的阶段，必须要执行该步骤，如果阶段上的学时满足了就不用再学该阶段下的课程！
+        await self._remove_finished_phase()
+        course_info = await self._get_target_course_id()
 
         target_course_url = None
         if course_info:

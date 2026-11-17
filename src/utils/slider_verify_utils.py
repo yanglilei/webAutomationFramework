@@ -1,4 +1,5 @@
 import asyncio
+import math
 import random
 import time
 
@@ -265,3 +266,106 @@ class SliderVerifyUtils:
         # 释放滑块
         await mouse.up()
         # await asyncio.sleep(4)  # 等待2秒，让验证通过
+
+    @classmethod
+    async def move_slider_slowly_pw_version_v2(
+            cls,
+            move_x: int,
+            btn_slider: Locator,
+            page,
+            free_interval=0.2
+    ):
+        """
+        模拟人类拖动滑块，正弦曲线轨迹，带微小随机抖动，适配playwright mouse
+        :param move_x: 需要拖动总距离(CSS像素，整数)
+        :param btn_slider: 滑块locator
+        :param page: playwright Page
+        :param free_interval: 到达目标位置后停留多久再松开鼠标
+        """
+        mouse = page.mouse
+        box = await btn_slider.bounding_box()
+        if box is None:
+            raise RuntimeError("滑块元素bounding_box获取失败，元素不可见/被遮挡")
+
+        start_x = box["x"] + box["width"] / 2
+        start_y = box["y"] + box["height"] / 2
+
+        # 移动鼠标到滑块中心，不要左上角，更贴近人操作
+        await mouse.move(start_x, start_y)
+        await asyncio.sleep(random.uniform(0.05, 0.2))  # 鼠标到位后短暂停顿（随机，不要固定1s）
+        await mouse.down()
+        await asyncio.sleep(random.uniform(0.08, 0.18))  # 按下鼠标后极短停顿，去掉固定1s僵硬等待
+
+        total_distance = move_x
+        # 总步数：根据距离自适应，最小10步，最大40步，不要固定死
+        steps = max(10, min(40, int(abs(total_distance) / 8)))
+        current_offset = 0
+
+        for step_idx in range(steps):
+            ratio = step_idx / steps
+            # ✅ 标准正弦曲线：sin(π * ratio)，0→1→0，平滑先加速后减速（人拖动标准模型）
+            speed_factor = math.sin(math.pi * ratio)
+
+            # 当前理论累计偏移
+            target_offset = total_distance * speed_factor
+            # 这一步需要移动的增量dx
+            dx = target_offset - current_offset
+
+            # 增加微小随机扰动，不能太大，±0.6像素，模拟人手微小抖动
+            dx += random.uniform(-0.4, 0.4)
+            # Y方向微小上下抖动（人拖动会轻微上下飘，不要dy=0）
+            dy = random.uniform(-1.2, 1.2)
+
+            # 防止超调：不能超过剩余距离
+            remain = total_distance - current_offset
+            dx = max(min(dx, remain), 0) if total_distance > 0 else min(max(dx, remain), 0)
+
+            # 更新鼠标绝对坐标
+            new_x = start_x + dx
+            new_y = start_y + dy
+
+            await mouse.move(new_x, new_y)
+            current_offset = dx
+
+            # 每步随机间隔，人拖动不是均匀间隔
+            await asyncio.sleep(random.uniform(0.012, 0.07))
+
+        # 最后修正到精准目标位置（消除轨迹累计误差）
+        final_x = start_x + total_distance
+        final_y = start_y + random.uniform(-0.8, 0.8)
+        await mouse.move(final_x, final_y)
+        # 到达目标位置短暂停留
+        await asyncio.sleep(free_interval)
+
+        # 释放鼠标
+        await mouse.up()
+
+    @classmethod
+    async def move_slider_fast_pw_version(cls, move_x: int, btn_slider: Locator, page, free_interval=0.2):
+        """
+        模拟滑块快速移动（确保所有移动距离为整数，适配move_by_offset要求）
+        pw=playwright
+        :param move_x: 总移动距离（x方向，整数）
+        :param btn_slider: 滑块元素（WebElement）
+        :param page: Page实例
+        :param free_interval: 滑块对齐后多少秒释放。有些滑块对齐后不宜太快释放，有些滑块则要快速释放
+        """
+        mouse = page.mouse
+        box = await btn_slider.bounding_box()
+        start_x = box["x"]
+        start_y = box["y"]
+        await mouse.move(start_x + 1, start_y + 1)
+        # await btn_slider.hover(position={"x": 0.0, "y": 0.0})
+        # await mouse.move(start_x, start_y)
+        await mouse.down()
+        # 第二步：模拟长按时长（比如长按 1 秒，可自定义）
+        await asyncio.sleep(1)  # 按住后停顿
+        # 第三步：最终微调（确保总距离精确到move_x）
+        # ac.move_by_offset(final_adjust, 0).perform()
+        await mouse.move(start_x + move_x, start_y)
+        # time.sleep(0.05)
+        # await asyncio.sleep(0.05)
+        await asyncio.sleep(free_interval)
+
+        # 释放滑块
+        await mouse.up()
